@@ -1,0 +1,3 @@
+/shared/NMPDE/nmpde-labs-aa-25-26/nmpde-Navier-Stokes/build/CMakeFiles/main.dir
+/shared/NMPDE/nmpde-labs-aa-25-26/nmpde-Navier-Stokes/build/CMakeFiles/edit_cache.dir
+/shared/NMPDE/nmpde-labs-aa-25-26/nmpde-Navier-Stokes/build/CMakeFiles/rebuild_cache.dir
