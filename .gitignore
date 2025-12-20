@@ -32,5 +32,17 @@
 *.exe
 *.out
 *.app
+*.o
+*.obj
+*.so
+*.dll
+*.dylib
+
+# Mesh
+*.msh
+*.vtk
+*.stl
+*.obj
+*.mesh
 
 */build/*
