@@ -44,5 +44,9 @@
 *.stl
 *.obj
 *.mesh
+*.vtu
+*.pvtu
+
+main
 
 */build/*

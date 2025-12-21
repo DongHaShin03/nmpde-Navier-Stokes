@@ -1,9 +1,18 @@
-#include <iostream>
+#include "NavierStokes2D.hpp"
 
-#include "NavierStokes.hpp"
-
-int main()
+// Main function.
+int
+main(int argc, char *argv[])
 {
+  Utilities::MPI::MPI_InitFinalize mpi_init(argc, argv);
 
-    return 0; 
-}
+  const std::string  mesh_file_name  = "../mesh/navierstokes.msh";
+  const unsigned int degree_velocity = 2;
+  const unsigned int degree_pressure = 1;
+
+  NavierStokes2D problem(mesh_file_name, degree_velocity, degree_pressure);
+
+  problem.run();
+
+  return 0;
+} 

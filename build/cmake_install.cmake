@@ -1,4 +1,4 @@
-# Install script for directory: /shared/NMPDE/nmpde-labs-aa-25-26/nmpde-Navier-Stokes
+# Install script for directory: /home/gio/apptainer/navier-stokes/nmpde-Navier-Stokes
 
 # Set the install prefix
 if(NOT DEFINED CMAKE_INSTALL_PREFIX)
@@ -50,5 +50,5 @@ endif()
 
 string(REPLACE ";" "\n" CMAKE_INSTALL_MANIFEST_CONTENT
        "${CMAKE_INSTALL_MANIFEST_FILES}")
-file(WRITE "/shared/NMPDE/nmpde-labs-aa-25-26/nmpde-Navier-Stokes/build/${CMAKE_INSTALL_MANIFEST}"
+file(WRITE "/home/gio/apptainer/navier-stokes/nmpde-Navier-Stokes/build/${CMAKE_INSTALL_MANIFEST}"
      "${CMAKE_INSTALL_MANIFEST_CONTENT}")

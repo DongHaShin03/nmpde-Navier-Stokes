@@ -57,10 +57,10 @@ RM = /u/sw/toolchains/gcc-glibc/11.2.0/base/bin/cmake -E rm -f
 EQUALS = =
 
 # The top-level source directory on which CMake was run.
-CMAKE_SOURCE_DIR = /shared/NMPDE/nmpde-labs-aa-25-26/nmpde-Navier-Stokes
+CMAKE_SOURCE_DIR = /home/gio/apptainer/navier-stokes/nmpde-Navier-Stokes
 
 # The top-level build directory on which CMake was run.
-CMAKE_BINARY_DIR = /shared/NMPDE/nmpde-labs-aa-25-26/nmpde-Navier-Stokes/build
+CMAKE_BINARY_DIR = /home/gio/apptainer/navier-stokes/nmpde-Navier-Stokes/build
 
 #=============================================================================
 # Targets provided globally by CMake.
@@ -87,9 +87,9 @@ rebuild_cache/fast: rebuild_cache
 
 # The main all target
 all: cmake_check_build_system
-	$(CMAKE_COMMAND) -E cmake_progress_start /shared/NMPDE/nmpde-labs-aa-25-26/nmpde-Navier-Stokes/build/CMakeFiles /shared/NMPDE/nmpde-labs-aa-25-26/nmpde-Navier-Stokes/build//CMakeFiles/progress.marks
+	$(CMAKE_COMMAND) -E cmake_progress_start /home/gio/apptainer/navier-stokes/nmpde-Navier-Stokes/build/CMakeFiles /home/gio/apptainer/navier-stokes/nmpde-Navier-Stokes/build//CMakeFiles/progress.marks
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 all
-	$(CMAKE_COMMAND) -E cmake_progress_start /shared/NMPDE/nmpde-labs-aa-25-26/nmpde-Navier-Stokes/build/CMakeFiles 0
+	$(CMAKE_COMMAND) -E cmake_progress_start /home/gio/apptainer/navier-stokes/nmpde-Navier-Stokes/build/CMakeFiles 0
 .PHONY : all
 
 # The main clean target
@@ -129,29 +129,29 @@ main/fast:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/main.dir/build.make CMakeFiles/main.dir/build
 .PHONY : main/fast
 
-src/NavierStokes.o: src/NavierStokes.cpp.o
-.PHONY : src/NavierStokes.o
+src/NavierStokes2D.o: src/NavierStokes2D.cpp.o
+.PHONY : src/NavierStokes2D.o
 
 # target to build an object file
-src/NavierStokes.cpp.o:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/main.dir/build.make CMakeFiles/main.dir/src/NavierStokes.cpp.o
-.PHONY : src/NavierStokes.cpp.o
+src/NavierStokes2D.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/main.dir/build.make CMakeFiles/main.dir/src/NavierStokes2D.cpp.o
+.PHONY : src/NavierStokes2D.cpp.o
 
-src/NavierStokes.i: src/NavierStokes.cpp.i
-.PHONY : src/NavierStokes.i
+src/NavierStokes2D.i: src/NavierStokes2D.cpp.i
+.PHONY : src/NavierStokes2D.i
 
 # target to preprocess a source file
-src/NavierStokes.cpp.i:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/main.dir/build.make CMakeFiles/main.dir/src/NavierStokes.cpp.i
-.PHONY : src/NavierStokes.cpp.i
+src/NavierStokes2D.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/main.dir/build.make CMakeFiles/main.dir/src/NavierStokes2D.cpp.i
+.PHONY : src/NavierStokes2D.cpp.i
 
-src/NavierStokes.s: src/NavierStokes.cpp.s
-.PHONY : src/NavierStokes.s
+src/NavierStokes2D.s: src/NavierStokes2D.cpp.s
+.PHONY : src/NavierStokes2D.s
 
 # target to generate assembly for a file
-src/NavierStokes.cpp.s:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/main.dir/build.make CMakeFiles/main.dir/src/NavierStokes.cpp.s
-.PHONY : src/NavierStokes.cpp.s
+src/NavierStokes2D.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/main.dir/build.make CMakeFiles/main.dir/src/NavierStokes2D.cpp.s
+.PHONY : src/NavierStokes2D.cpp.s
 
 src/main.o: src/main.cpp.o
 .PHONY : src/main.o
@@ -186,9 +186,9 @@ help:
 	@echo "... edit_cache"
 	@echo "... rebuild_cache"
 	@echo "... main"
-	@echo "... src/NavierStokes.o"
-	@echo "... src/NavierStokes.i"
-	@echo "... src/NavierStokes.s"
+	@echo "... src/NavierStokes2D.o"
+	@echo "... src/NavierStokes2D.i"
+	@echo "... src/NavierStokes2D.s"
 	@echo "... src/main.o"
 	@echo "... src/main.i"
 	@echo "... src/main.s"

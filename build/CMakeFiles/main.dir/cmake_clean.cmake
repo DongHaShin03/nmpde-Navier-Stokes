@@ -1,6 +1,6 @@
 file(REMOVE_RECURSE
-  "CMakeFiles/main.dir/src/NavierStokes.cpp.o"
-  "CMakeFiles/main.dir/src/NavierStokes.cpp.o.d"
+  "CMakeFiles/main.dir/src/NavierStokes2D.cpp.o"
+  "CMakeFiles/main.dir/src/NavierStokes2D.cpp.o.d"
   "CMakeFiles/main.dir/src/main.cpp.o"
   "CMakeFiles/main.dir/src/main.cpp.o.d"
   "main"
