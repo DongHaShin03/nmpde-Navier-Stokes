@@ -238,7 +238,7 @@ public:
 
   // Output results.
   void
-  output(const unsigned int &time_step);
+  output();
 
   // Main loop
   void
@@ -331,6 +331,8 @@ protected:
   
   // Total simulation time
   const double T = 80.0;
+
+  unsigned int timestep_number = 0; 
   
   // Temporal Steps
   const double deltat = 0.5;
@@ -338,7 +340,7 @@ protected:
   // Current time
   double time = 0.0;
 
-  void compute_forces(const unsigned int &time_step);
+  void compute_forces();
 
 };
 

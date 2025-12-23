@@ -353,7 +353,7 @@ NavierStokes2D::solve()
 }
 
 void
-NavierStokes2D::compute_forces(const unsigned int &time_step)
+NavierStokes2D::compute_forces()
 {
 
   const unsigned int n_q_face = quadrature_face->size();
@@ -431,7 +431,7 @@ NavierStokes2D::compute_forces(const unsigned int &time_step)
 
   if(mpi_rank == 0) 
   {
-    pcout << "   Step " << time_step << " Forces: Drag=" << total_force_x << ", Lift=" << total_force_y << std::endl;
+    pcout << "   Step " << timestep_number << " Forces: Drag=" << total_force_x << ", Lift=" << total_force_y << std::endl;
     pcout << "   Coeffs: Cd=" << C_D << ", Cl=" << C_L << std::endl;
 
     std::ofstream file("coefficients.txt", std::ios::app);
@@ -440,7 +440,7 @@ NavierStokes2D::compute_forces(const unsigned int &time_step)
 }
 
 
-void NavierStokes2D::output(const unsigned int &time_step)
+void NavierStokes2D::output()
 {
   pcout << "===============================================" << std::endl;
 
@@ -464,13 +464,13 @@ void NavierStokes2D::output(const unsigned int &time_step)
   data_out.build_patches();
 
   // Nome base senza estensione (es. "solution-10")
-  const std::string filename_base = "solution-" + std::to_string(time_step);
+  const std::string filename_base = "solution-" + std::to_string(timestep_number);
   
   // 1. Generazione dei file .pvtu e .vtu
   // Questa funzione genererà file del tipo "solution-10_0.pvtu" su disco
   data_out.write_vtu_with_pvtu_record("./",
                                       filename_base,
-                                      time_step,
+                                      timestep_number,
                                       MPI_COMM_WORLD);
 
   // 2. Generazione del file .pvd (Indice temporale)
@@ -503,24 +503,24 @@ void NavierStokes2D::run(){
   old_solution = 0.0;
   time = 0.0;
 
-  output(0);
-  unsigned int time_step = 0;
+  output();
+  unsigned int timestep_number = 0;
 
   while (time < T)
   {
     time += deltat;
-    time_step++;
+    ++timestep_number;
 
-    pcout << std::endl << "Time step " << time_step << " at t=" << time << std::endl;
+    pcout << std::endl << "Time step " << timestep_number << " at t=" << time << std::endl;
 
     assemble();
 
     solve();
 
-    compute_forces(time_step);
+    compute_forces();
 
-    if(time_step % 10 == 0)
-      output(time_step);
+    if(timestep_number % 10 == 0)
+      output();
     
     old_solution = solution;  
   }
