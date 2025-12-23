@@ -69,7 +69,7 @@ public:
     }
 
   protected:
-    const double u_0 = 0.1;
+    const double u_0 = 1.0;
   };
 
   //Preconditioner -- TODO
@@ -330,10 +330,10 @@ protected:
   TrilinosWrappers::MPI::BlockVector old_solution;
   
   // Total simulation time
-  const double T = 8.0;
+  const double T = 80.0;
   
   // Temporal Steps
-  const double deltat = 0.05;
+  const double deltat = 0.5;
 
   // Current time
   double time = 0.0;

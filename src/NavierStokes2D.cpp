@@ -288,8 +288,8 @@ NavierStokes2D::assemble()
     ComponentMask mask_velocity(dim + 1, true);
     mask_velocity.set(dim, false);
 
-    //In Gamma[0] -> Inlet Velocity (Left Wall)
-    boundary_functions[0] = &inlet_velocity;
+    //In Gamma[1] -> Inlet Velocity (Left Wall)
+    boundary_functions[1] = &inlet_velocity;
     VectorTools::interpolate_boundary_values(dof_handler,
                                              boundary_functions,
                                              boundary_values,
@@ -298,8 +298,8 @@ NavierStokes2D::assemble()
     boundary_functions.clear();
     Functions::ZeroFunction<dim> zero_function(dim + 1);
 
-    // In Gamma[1] -- > u = 0;
-    boundary_functions[1] = &zero_function;
+    // In Gamma[3] -- > u = 0;
+    boundary_functions[3] = &zero_function;
     VectorTools::interpolate_boundary_values(dof_handler,
                                              boundary_functions,
                                              boundary_values,
@@ -419,7 +419,7 @@ NavierStokes2D::compute_forces(const unsigned int &time_step)
   double total_force_y = Utilities::MPI::sum(force_y, MPI_COMM_WORLD);
 
   // Coefficient
-  const double U_mean = 5.0;
+  const double U_mean = 0.1;
   const double L = 25;
   const double den = U_mean * U_mean * L;
 
