@@ -1,4 +1,7 @@
 #include "NavierStokes2D.hpp"
+#include <filesystem>
+
+namespace fs = std::filesystem;
 
 void
 NavierStokes2D::setup()
@@ -462,36 +465,37 @@ void NavierStokes2D::output()
   data_out.add_data_vector(partitioning, "partitioning");
 
   data_out.build_patches();
+ 
+  const std::string folder = "results/";
+  const std::string filename_prefix = "solution";
 
-  // Nome base senza estensione (es. "solution-10")
-  const std::string filename_base = "solution-" + std::to_string(timestep_number);
-  
-  // 1. Generazione dei file .pvtu e .vtu
-  // Questa funzione genererà file del tipo "solution-10_0.pvtu" su disco
-  data_out.write_vtu_with_pvtu_record("./",
-                                      filename_base,
+  data_out.write_vtu_with_pvtu_record(folder ,
+                                      filename_prefix,
                                       timestep_number,
                                       MPI_COMM_WORLD);
 
-  // 2. Generazione del file .pvd (Indice temporale)
   if (mpi_rank == 0)
     {
-      // CORREZIONE QUI:
-      // Poiché deal.II ha salvato il file come "solution-X_0.pvtu" (visto nei tuoi screenshot),
-      // dobbiamo aggiungere "_0.pvtu" al nome nel registro PVD.
-      std::string pvtu_filename = filename_base + "_0.pvtu";
-
+      std::string pvtu_filename = filename_prefix + "_" + std::to_string(timestep_number) + ".pvtu";
       times_and_names.push_back({time, pvtu_filename});
 
-      std::ofstream pvd_file("solution.pvd");
+      std::ofstream pvd_file(folder + "solution.pvd");
       DataOutBase::write_pvd_record(pvd_file, times_and_names);
     }
 
-  pcout << "Output written to " << filename_base << "..." << std::endl;
+  pcout << "Output written for step " << timestep_number << "..." << std::endl;
   pcout << "===============================================" << std::endl;
 }
 
 void NavierStokes2D::run(){
+  
+  if (mpi_rank == 0)
+  {
+    if (!fs::exists("results"))
+      fs::create_directory("results");
+  }
+  MPI_Barrier(MPI_COMM_WORLD);
+
   pcout << "===============================================" << std::endl;
   pcout << "   Running Navier-Stokes Simulation" << std::endl;
   pcout << "   T_final = " << T << ", dt = " << deltat << std::endl;
@@ -502,9 +506,10 @@ void NavierStokes2D::run(){
   solution = 0.0;
   old_solution = 0.0;
   time = 0.0;
+  timestep_number = 0;
 
   output();
-  unsigned int timestep_number = 0;
+ 
 
   while (time < T)
   {
@@ -519,7 +524,7 @@ void NavierStokes2D::run(){
 
     compute_forces();
 
-    if(timestep_number % 10 == 0)
+    //if(timestep_number % 10 == 0)
       output();
     
     old_solution = solution;  
