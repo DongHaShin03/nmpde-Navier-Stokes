@@ -1,3 +1,0 @@
-/home/gio/apptainer/navier-stokes/nmpde-Navier-Stokes/build/CMakeFiles/main.dir
-/home/gio/apptainer/navier-stokes/nmpde-Navier-Stokes/build/CMakeFiles/edit_cache.dir
-/home/gio/apptainer/navier-stokes/nmpde-Navier-Stokes/build/CMakeFiles/rebuild_cache.dir
