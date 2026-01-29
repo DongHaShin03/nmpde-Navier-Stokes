@@ -42,6 +42,9 @@ public:
   // Dim of the problem
   static constexpr unsigned int dim = 2;
 
+  using Value = std::function<double(const Point<dim> &p)>; 
+        using VectorField = std::function<Tensor<1, dim>(const Point<dim> &p)>; 
+
   // Function for inlet velocity.
   class InletVelocity : public Function<dim>
   {
