@@ -3,5 +3,5 @@ project(nmpde-Navier-Stokes LANGUAGES CXX C)
 
 include(../common/cmake-common.cmake)
 
-add_executable(main src/main.cpp src/NavierStokes2D.cpp)
-deal_ii_setup_target(main)
+add_executable(main2 src/main2.cpp src/NavierStokes.cpp)
+deal_ii_setup_target(main2)
