@@ -1,4 +1,5 @@
 #include "NavierStokes.hpp"
+#include "preconditioners/BlockTriangular.hpp"
 
 using namespace std; 
 static constexpr unsigned int dim = NavierStokes::dim; 
@@ -67,9 +68,13 @@ int main(int argc, char *argv[])
 
     NavierStokes problem(mesh_file_name, degree_velocity, degree_pressure, nu, f, T, theta, delta_t);
 
+    auto preconditioner = std::make_unique<BlockTriangular>(); 
+    problem.set_preconditioner(std::move(preconditioner)); 
+
     Inlet inlet_velocity; 
     Functions::ZeroFunction<dim> zero_function; 
     Neumann neumann_bc; 
+
     problem.dirichlet[1] = &inlet_velocity;  
     problem.dirichlet[3] = &zero_function;  
     problem.dirichlet[5] = &zero_function;  

@@ -128,6 +128,7 @@ void NavierStokes::setup()
 
         pcout << "  Initializing the matrices" << std::endl;
         system_matrix.reinit(sparsity);
+        velocity_mass.reinit(sparsity); 
         pressure_mass.reinit(sparsity_pressure_mass);
 
         pcout << "  Initializing the system right-hand side" << std::endl;
@@ -154,8 +155,12 @@ void NavierStokes::assemble()
     FEFaceValues<dim> fe_values_boundary(*fe, *quadrature_boundary,
                                          update_values | update_normal_vectors | update_JxW_values);
 
+    if(flags.Mu) velocity_mass = 0.0; 
+    if(flags.Mp) pressure_mass = 0.0; 
+
     // Local matrix and vector. 
     FullMatrix<double> cell_matrix(dofs_per_cell, dofs_per_cell);
+    FullMatrix<double> cell_velocity_mass_matrix(dofs_per_cell, dofs_per_cell);
     FullMatrix<double> cell_pressure_mass_matrix(dofs_per_cell, dofs_per_cell);
     Vector<double>     cell_rhs(dofs_per_cell);
 
@@ -163,7 +168,6 @@ void NavierStokes::assemble()
 
     system_matrix = 0.0;
     system_rhs    = 0.0;
-    pressure_mass = 0.0;
 
     FEValuesExtractors::Vector velocity(0);
     FEValuesExtractors::Scalar pressure(dim);
@@ -180,7 +184,10 @@ void NavierStokes::assemble()
 
         cell_matrix               = 0.0;
         cell_rhs                  = 0.0;
-        cell_pressure_mass_matrix = 0.0;
+        
+
+        if (flags.Mu) cell_velocity_mass_matrix = 0.0;
+        if (flags.Mp) cell_pressure_mass_matrix = 0.0;
 
         fe_values[velocity].get_function_values(old_solution, old_velocity_values);
         fe_values[velocity].get_function_gradients(old_solution, old_velocity_grads);
@@ -197,6 +204,7 @@ void NavierStokes::assemble()
                 const Tensor<1, dim> phi_vel_i = fe_values[velocity].value(i, q);
                 const Tensor<2, dim> grad_phi_vel_i = fe_values[velocity].gradient(i,q);
                 const double div_phi_vel_i = fe_values[velocity].divergence(i, q);
+
                 const double psi_i = fe_values[pressure].value(i, q);
 
                 for (unsigned int j = 0; j < dofs_per_cell; ++j)
@@ -205,6 +213,7 @@ void NavierStokes::assemble()
                     const Tensor<1, dim> phi_vel_j = fe_values[velocity].value(j, q);
                     const Tensor<2, dim> grad_phi_vel_j = fe_values[velocity].gradient(j,q);
                     const double div_phi_vel_j = fe_values[velocity].divergence(j, q);
+
                     const double psi_j = fe_values[pressure].value(j, q);
 
                     // (M / \delta{t})
@@ -226,7 +235,8 @@ void NavierStokes::assemble()
                     cell_matrix(i, j) -= (psi_i * div_phi_vel_j) * 
                                          fe_values.JxW(q); 
                     
-                    cell_pressure_mass_matrix(i, j) += psi_i * psi_j / nu * fe_values.JxW(q);
+                    if (flags.Mu) cell_velocity_mass_matrix(i, j) += scalar_product(phi_vel_i, phi_vel_i) * fe_values.JxW(q);
+                    if (flags.Mp) cell_pressure_mass_matrix(i, j) += psi_i * psi_j / nu * fe_values.JxW(q);
                 }
 
                 // Forcing term.
@@ -284,12 +294,15 @@ void NavierStokes::assemble()
 
         system_matrix.add(dof_indices, cell_matrix);
         system_rhs.add(dof_indices, cell_rhs);
-        pressure_mass.add(dof_indices, cell_pressure_mass_matrix);
+        if(flags.Mu) velocity_mass.add(dof_indices, cell_velocity_mass_matrix);
+        if(flags.Mp) pressure_mass.add(dof_indices, cell_pressure_mass_matrix);
     }
 
     system_matrix.compress(VectorOperation::add);
     system_rhs.compress(VectorOperation::add);
-    pressure_mass.compress(VectorOperation::add);
+
+    if(flags.Mu) velocity_mass.compress(VectorOperation::add);
+    if(flags.Mp) pressure_mass.compress(VectorOperation::add);
 
     // Dirichlet boundary conditions
     {
@@ -310,24 +323,27 @@ void NavierStokes::assemble()
 void NavierStokes::solve()
 {
     pcout << "===============================================" << std::endl;
-    SolverControl solver_control(100000, 1e-2 * system_rhs.l2_norm());
-
+    SolverControl solver_control(10000, 1e-2 * system_rhs.l2_norm());
     SolverGMRES<TrilinosWrappers::MPI::BlockVector> solver(solver_control);
 
-    // PreconditionBlockDiagonal preconditioner;
-    // preconditioner.initialize(system_matrix.block(0, 0),
-    //                           pressure_mass.block(1, 1));
-
-    PreconditionBlockTriangular preconditioner;
-    preconditioner.initialize(system_matrix.block(0, 0),
-                                pressure_mass.block(1, 1),
-                                system_matrix.block(1, 0));
-
     pcout << "Solving the linear system" << std::endl;
-
     solution_owned = 0.0;
 
-    solver.solve(system_matrix, solution_owned, system_rhs, preconditioner);
+    RequiredMatrices data;
+
+    data.velocity_stiffness = &system_matrix.block(0, 0);
+    data.B = &system_matrix.block(1, 0);
+
+    if(flags.Mu) data.velocity_mass = &velocity_mass.block(0, 0);
+    if(flags.Mp) data.pressure_mass = &pressure_mass.block(1, 1);
+    
+    if (preconditioner)
+    {
+        preconditioner->initialize(data);
+        solver.solve(system_matrix, solution_owned, system_rhs, *preconditioner);
+    }
+    else pcout << "Error: a preconditioner is needed in order to solve the problem." << std::endl; 
+
     pcout << "  " << solver_control.last_step() << " GMRES iterations" << std::endl;
 }
 
@@ -458,6 +474,9 @@ void NavierStokes::run()
         pcout << "===============================================" << std::endl;
         
         setup(); 
+
+        if (preconditioner) 
+            flags = preconditioner->get_needed_matrices();
         
         VectorTools::interpolate(dof_handler, *initial_condition, solution_owned);
         solution = solution_owned;
