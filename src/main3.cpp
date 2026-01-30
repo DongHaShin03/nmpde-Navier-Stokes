@@ -1,5 +1,5 @@
 #include "NavierStokes.hpp"
-#include "preconditioners/BlockTriangular.hpp"
+#include "preconditioners/BlockDiagonal.hpp"
 
 /*
     Test Case: solution using Block Diagonal Preconditioner 
@@ -8,7 +8,6 @@
     Wall Boundary Condition (D) : (0, 0, 0)
     Neumann Boundary Condition : ()
 */
-
 
 static constexpr unsigned int dim = NavierStokes::dim; 
 
@@ -92,7 +91,7 @@ int main(int argc, char *argv[])
     NavierStokes problem(mesh_file_name, degree_velocity, degree_pressure, nu, f, T, theta, delta_t);
 
     // Select Preconditioner
-    auto preconditioner = std::make_unique<BlockTriangular>(); 
+    auto preconditioner = std::make_unique<BlockDiagonal>(); 
     problem.set_preconditioner(std::move(preconditioner)); 
 
     // Set Boundary Conditions

@@ -43,12 +43,6 @@ class NavierStokes
         static constexpr unsigned int dim = 2;
         using VectorField = std::function<Tensor<1, dim>(const Point<dim> &p, const double &)>; 
 
-        struct NeededMatrices
-        {
-            bool M_p = false;
-            bool M_u = false; 
-        };
-
         class PreconditionIdentity
         {
             public:
