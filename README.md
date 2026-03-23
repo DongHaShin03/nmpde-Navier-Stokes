@@ -21,3 +21,5 @@ The executable will be created into `build`, and can be executed through
 ```bash
 $ ./executable-name
 ```
+
+source /u/sw/etc/bash.bashrc
