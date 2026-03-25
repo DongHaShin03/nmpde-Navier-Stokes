@@ -333,12 +333,12 @@ protected:
   TrilinosWrappers::MPI::BlockVector old_solution;
   
   // Total simulation time
-  const double T = 80.0;
+  const double T = 10.0;
 
   unsigned int timestep_number = 0; 
   
   // Temporal Steps
-  const double deltat = 0.5;
+  const double deltat = 0.1;
 
   // Current time
   double time = 0.0;

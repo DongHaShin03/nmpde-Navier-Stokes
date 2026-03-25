@@ -47,23 +47,23 @@ int main(int argc, char *argv[])
 {
     Utilities::MPI::MPI_InitFinalize mpi_init(argc, argv);
 
-    const std::string  mesh_file_name  = "../mesh/navierstokesFINAL.msh";
+    const std::string  mesh_file_name  = "../mesh/ns-mesh2D-level1.msh";
     const unsigned int degree_velocity = 2;
     const unsigned int degree_pressure = 1;
     
-    const double nu = 1.0; 
+    const double nu = 0.05; 
     const auto f = [](const Point<dim> &, const double &)
     {
         Tensor<1, dim> result; 
         result[0] = 0.0; 
         result[1] = 0.0; 
-        result[2] = 0.0; 
+        //result[2] = 0.0; 
         return result; 
     }; 
     
-    const double T = 80.0; 
+    const double T = 2.0; 
     const double theta = 1.0; 
-    const double delta_t = 0.5; 
+    const double delta_t = 0.01; 
 
     NavierStokes problem(mesh_file_name, degree_velocity, degree_pressure, nu, f, T, theta, delta_t);
 

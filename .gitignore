@@ -47,6 +47,13 @@
 *.vtu
 *.pvtu
 
+#md and txt
+*.txt
+*.md
+
+#exec
 main
+main2
+main3
 
 */build/*
