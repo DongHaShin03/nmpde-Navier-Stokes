@@ -1,0 +1,26 @@
+subsection Mesh and discretization
+  set Mesh file = ../mesh/ns-mesh2D-level0.msh
+  set Velocity degree = 2
+  set Pressure degree = 1
+  set Final time = 1.0
+  set Theta = 1.0
+  set Time step = 0.01
+end
+
+subsection Physics
+  set Viscosity = 0.05
+  set Inlet velocity = 1.0
+  set Outlet pressure = -1.0
+end
+
+subsection Force coefficients
+  set Reference velocity = 0.1
+  set Reference length = 25.0
+end
+
+subsection Boundary ids
+  set Inlet = 1
+  set Outlet = 2
+  set Walls = 3
+  set Cylinder = 5
+end
