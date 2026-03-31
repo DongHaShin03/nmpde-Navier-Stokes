@@ -19,11 +19,10 @@
 #include <deal.II/grid/grid_in.h>
 #include <deal.II/grid/grid_tools.h>
 
-#include <deal.II/lac/solver_cg.h>
+#include <deal.II/lac/precondition.h>
 #include <deal.II/lac/solver_gmres.h>
 #include <deal.II/lac/trilinos_block_sparse_matrix.h>
 #include <deal.II/lac/trilinos_parallel_block_vector.h>
-#include <deal.II/lac/trilinos_precondition.h>
 #include <deal.II/lac/trilinos_sparse_matrix.h>
 
 #include <deal.II/numerics/data_out.h>
@@ -31,162 +30,59 @@
 #include <deal.II/numerics/vector_tools.h>
 
 #include <fstream>
+#include <functional>
 #include <iostream>
+#include <map>
+#include <memory>
+#include <string>
+#include <utility>
+#include <vector>
 
 using namespace dealii;
 
+template <int dim>
 class NavierStokes
 {
-    public: 
-        static constexpr unsigned int dim = 2;
-        using VectorField = std::function<Tensor<1, dim>(const Point<dim> &p, const double &)>; 
+    public:
+        static constexpr unsigned int dimension = dim;
+        NavierStokes(
+          const std::string  &mesh_file_name_,
+          const unsigned int &degree_velocity_,
+          const unsigned int &degree_pressure_,
+          const double       &nu_,
+          const std::function<Tensor<1, dim>(const Point<dim> &, const double &)> &f_,
+          const double       &T_,
+          const double       &theta_,
+          const double       &delta_t_);
 
-        class PreconditionIdentity
-        {
-            public:
-                void vmult(TrilinosWrappers::MPI::BlockVector &dst, const TrilinosWrappers::MPI::BlockVector &src) const { dst = src; }
-        };
+        virtual ~NavierStokes() = default;
 
-        // Block-diagonal preconditioner.
-        class PreconditionBlockDiagonal
-        {
-            public:
-                // Initialize the preconditioner, given the velocity stiffness matrix and the pressure mass matrix.
-                void initialize(const TrilinosWrappers::SparseMatrix &velocity_stiffness_, const TrilinosWrappers::SparseMatrix &pressure_mass_)
-                {
-                    velocity_stiffness = &velocity_stiffness_;
-                    pressure_mass      = &pressure_mass_;
+        void run();
 
-                    preconditioner_velocity.initialize(velocity_stiffness_);
-                    preconditioner_pressure.initialize(pressure_mass_);
-                }
-
-                // Application of the preconditioner.
-                void vmult(TrilinosWrappers::MPI::BlockVector &dst, const TrilinosWrappers::MPI::BlockVector &src) const
-                {
-                    SolverControl solver_control_velocity(1000, 1e-2 * src.block(0).l2_norm());
-                    SolverCG<TrilinosWrappers::MPI::Vector> solver_cg_velocity(solver_control_velocity);
-                    solver_cg_velocity.solve(*velocity_stiffness, dst.block(0), src.block(0), preconditioner_velocity);
-
-                    SolverControl solver_control_pressure(1000, 1e-2 * src.block(1).l2_norm());
-                    SolverCG<TrilinosWrappers::MPI::Vector> solver_cg_pressure(solver_control_pressure);
-                    solver_cg_pressure.solve(*pressure_mass, dst.block(1), src.block(1), preconditioner_pressure);
-                }
-
-            protected:
-                // Velocity stiffness matrix.
-                const TrilinosWrappers::SparseMatrix *velocity_stiffness;
-
-                // Preconditioner used for the velocity block.
-                TrilinosWrappers::PreconditionILU preconditioner_velocity;
-
-                // Pressure mass matrix.
-                const TrilinosWrappers::SparseMatrix *pressure_mass;
-
-                // Preconditioner used for the pressure block.
-                TrilinosWrappers::PreconditionILU preconditioner_pressure;
-        };
-
-        // Block-triangular preconditioner.
-        class PreconditionBlockTriangular
-        {
-            public:
-                // Initialize the preconditioner, given the velocity stiffness matrix, the
-                // pressure mass matrix.
-                void initialize(const TrilinosWrappers::SparseMatrix &velocity_stiffness_, const TrilinosWrappers::SparseMatrix &pressure_mass_, const TrilinosWrappers::SparseMatrix &B_)
-                {
-                    velocity_stiffness = &velocity_stiffness_;
-                    pressure_mass      = &pressure_mass_;
-                    B                  = &B_;
-
-                    preconditioner_velocity.initialize(velocity_stiffness_);
-                    preconditioner_pressure.initialize(pressure_mass_);
-                }
-
-                // Application of the preconditioner.
-                void vmult(TrilinosWrappers::MPI::BlockVector &dst, const TrilinosWrappers::MPI::BlockVector &src) const
-                {
-                    SolverControl solver_control_velocity(1000, 1e-2 * src.block(0).l2_norm());
-                    SolverCG<TrilinosWrappers::MPI::Vector> solver_cg_velocity(solver_control_velocity);
-                    solver_cg_velocity.solve(*velocity_stiffness, dst.block(0), src.block(0), preconditioner_velocity);
-
-                    tmp.reinit(src.block(1));
-                    B->vmult(tmp, dst.block(0));
-                    tmp.sadd(-1.0, src.block(1));
-
-                    SolverControl solver_control_pressure(1000, 1e-2 * src.block(1).l2_norm());
-                    SolverCG<TrilinosWrappers::MPI::Vector> solver_cg_pressure(solver_control_pressure);
-                    solver_cg_pressure.solve(*pressure_mass, dst.block(1), tmp, preconditioner_pressure);
-                }
-
-            protected:
-                // Velocity stiffness matrix.
-                const TrilinosWrappers::SparseMatrix *velocity_stiffness;
-
-                // Preconditioner used for the velocity block.
-                TrilinosWrappers::PreconditionILU preconditioner_velocity;
-
-                // Pressure mass matrix.
-                const TrilinosWrappers::SparseMatrix *pressure_mass;
-
-                // Preconditioner used for the pressure block.
-                TrilinosWrappers::PreconditionILU preconditioner_pressure;
-
-                // B matrix.
-                const TrilinosWrappers::SparseMatrix *B;
-
-                // Temporary vector.
-                mutable TrilinosWrappers::MPI::Vector tmp;
-        };
-
-        NavierStokes
-        (
-            const std::string  &mesh_file_name_,
-            const unsigned int &degree_velocity_,
-            const unsigned int &degree_pressure_,
-            const double &nu_,
-            const VectorField &f_,
-            const double &T_,
-            const double &theta_,
-            const double &delta_t_
-        )
-        : mesh_file_name(mesh_file_name_)
-        , degree_velocity(degree_velocity_)
-        , degree_pressure(degree_pressure_)
-        , nu(nu_)
-        , f(f_)
-        , T(T_)
-        , theta(theta_)
-        , delta_t(delta_t_)
-        , mpi_size(Utilities::MPI::n_mpi_processes(MPI_COMM_WORLD))
-        , mpi_rank(Utilities::MPI::this_mpi_process(MPI_COMM_WORLD))
-        , mesh(MPI_COMM_WORLD)
-        , pcout(std::cout, mpi_rank == 0)
-        {}
-
-        void run(); 
-
-        std::unique_ptr<Function<dim>> initial_condition; 
+        std::unique_ptr<Function<dim>> initial_condition;
         std::map<types::boundary_id, const Function<dim> *> dirichlet;
         std::map<types::boundary_id, const Function<dim> *> neumann;
 
-    protected: 
-        void setup(); 
-        void assemble(); 
-        void solve(); 
-        void output(); 
-        void compute_forces(); 
+    protected:
+        virtual void compute_forces() = 0;
+        virtual std::string simulation_name() const = 0;
+        virtual std::string output_folder() const = 0;
+
+        void setup();
+        void assemble();
+        void solve();
+        void output();
 
         const std::string mesh_file_name;
         const unsigned int degree_velocity;
         const unsigned int degree_pressure;
-        const double nu; 
-        const VectorField f;
+        const double nu;
+        const std::function<Tensor<1, dim>(const Point<dim> &, const double &)> f;
 
         const double T;
-        const double theta; 
+        const double theta;
         const double delta_t;
-        unsigned int timestep_number = 0; 
+        unsigned int timestep_number = 0;
         double time = 0.0;
 
         const unsigned int mpi_size;
@@ -195,23 +91,29 @@ class NavierStokes
 
         std::unique_ptr<FiniteElement<dim>> fe;
         std::unique_ptr<Quadrature<dim>> quadrature;
-        std::unique_ptr<Quadrature<dim-1>> quadrature_boundary;
+        std::unique_ptr<Quadrature<dim - 1>> quadrature_boundary;
 
         DoFHandler<dim> dof_handler;
         IndexSet locally_owned_dofs;
-        std::vector<IndexSet> block_owned_dofs; // DoFs owned by current process in the velocity and pressure blocks.
+        std::vector<IndexSet> block_owned_dofs;
         IndexSet locally_relevant_dofs;
-        std::vector<IndexSet> block_relevant_dofs; // DoFs relevant to current process in the velocity and pressure blocks.
+        std::vector<IndexSet> block_relevant_dofs;
 
         TrilinosWrappers::BlockSparseMatrix system_matrix;
         TrilinosWrappers::BlockSparseMatrix pressure_mass;
         TrilinosWrappers::MPI::BlockVector system_rhs;
 
-        TrilinosWrappers::MPI::BlockVector solution_owned; // without ghost elements
-        TrilinosWrappers::MPI::BlockVector solution;       // with ghost elements
-        TrilinosWrappers::MPI::BlockVector old_solution;   // solution of previous time step
+        TrilinosWrappers::MPI::BlockVector solution_owned;
+        TrilinosWrappers::MPI::BlockVector solution;
+        TrilinosWrappers::MPI::BlockVector old_solution;
+
+        std::vector<std::pair<double, std::string>> times_and_names;
 
         ConditionalOStream pcout;
-}; 
+};
+
+extern template class NavierStokes<2>;
+extern template class NavierStokes<3>;
 
 #endif
+
