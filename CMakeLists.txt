@@ -3,8 +3,15 @@ project(nmpde-Navier-Stokes LANGUAGES CXX C)
 
 include(common/cmake-common.cmake)
 
-add_executable(main2 src/main2.cpp src/NavierStokes.cpp)
-deal_ii_setup_target(main2)
+set(NAVIER_STOKES_SOURCES
+  src/NavierStokes.cpp
+  src/NavierStokes2D.cpp
+  src/NavierStokes3D.cpp
+  src/FlowPastCylinder2D.cpp
+)
+
+add_executable(main src/main.cpp ${NAVIER_STOKES_SOURCES})
+deal_ii_setup_target(main)
 
 # For Makefile generators, extend `make clean` so the build tree is left
 # essentially empty after cleaning.
@@ -15,7 +22,7 @@ if(CMAKE_GENERATOR MATCHES "Makefiles")
     "${CMAKE_BINARY_DIR}/Makefile"
     "${CMAKE_BINARY_DIR}/cmake_install.cmake"
     "${CMAKE_BINARY_DIR}/compile_commands.json"
-    "${CMAKE_BINARY_DIR}/main2"
+    "${CMAKE_BINARY_DIR}/main"
     "${CMAKE_BINARY_DIR}/results"
     "${CMAKE_BINARY_DIR}/coefficients.txt"
     "${CMAKE_BINARY_DIR}/solution.pvd"

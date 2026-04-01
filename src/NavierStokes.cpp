@@ -1,8 +1,62 @@
 #include "NavierStokes.hpp"
 
-void NavierStokes::setup()
+#include <algorithm>
+#include <filesystem>
+#include <iomanip>
+
+namespace fs = std::filesystem;
+
+template <int dim>
+NavierStokes<dim>::NavierStokes(const std::string  &mesh_file_name_,
+                                const unsigned int &degree_velocity_,
+                                const unsigned int &degree_pressure_,
+                                const double       &nu_,
+                                const std::function<Tensor<1, dim>(const Point<dim> &, const double &)> &f_,
+                                const double       &T_,
+                                const double       &theta_,
+                                const double       &delta_t_)
+  : mesh_file_name(mesh_file_name_)
+  , degree_velocity(degree_velocity_)
+  , degree_pressure(degree_pressure_)
+  , nu(nu_)
+  , f(f_)
+  , T(T_)
+  , theta(theta_)
+  , delta_t(delta_t_)
+  , mpi_size(Utilities::MPI::n_mpi_processes(MPI_COMM_WORLD))
+  , mpi_rank(Utilities::MPI::this_mpi_process(MPI_COMM_WORLD))
+  , mesh(MPI_COMM_WORLD)
+  , dof_handler(mesh)
+  , pcout(std::cout, mpi_rank == 0)
+{}
+
+template <int dim>
+void NavierStokes<dim>::set_nonlinear_solver_parameters(
+  const unsigned int max_iterations,
+  const double       tolerance)
 {
-    // Create the mesh.
+    nonlinear_max_iterations = std::max(1u, max_iterations);
+    nonlinear_tolerance = std::max(1e-12, tolerance);
+}
+
+template <int dim>
+void NavierStokes<dim>::set_linear_solver_parameters(
+  const unsigned int gmres_restart_length_,
+  const double       pressure_regularization_,
+  const unsigned int linear_max_iterations_,
+  const double       linear_relative_tolerance_,
+  const double       linear_absolute_tolerance_)
+{
+    gmres_restart_length = std::max(1u, gmres_restart_length_);
+    pressure_regularization = std::max(0.0, pressure_regularization_);
+    linear_max_iterations = std::max(1u, linear_max_iterations_);
+    linear_relative_tolerance = std::max(0.0, linear_relative_tolerance_);
+    linear_absolute_tolerance = std::max(0.0, linear_absolute_tolerance_);
+}
+
+template <int dim>
+void NavierStokes<dim>::setup()
+{
     {
         pcout << "Initializing the mesh" << std::endl;
 
@@ -15,63 +69,66 @@ void NavierStokes::setup()
         grid_in.read_msh(mesh_file);
 
         GridTools::partition_triangulation(mpi_size, mesh_serial);
-        const auto construction_data = TriangulationDescription::Utilities::create_description_from_triangulation(mesh_serial, MPI_COMM_WORLD);
+        const auto construction_data =
+          TriangulationDescription::Utilities::create_description_from_triangulation(
+            mesh_serial, MPI_COMM_WORLD);
         mesh.create_triangulation(construction_data);
 
-        pcout << "  Number of elements = " << mesh.n_global_active_cells() << std::endl;
+        pcout << "  Number of elements = " << mesh.n_global_active_cells()
+              << std::endl;
     }
 
     pcout << "-----------------------------------------------" << std::endl;
 
-    // Initialize the finite element space.
     {
         pcout << "Initializing the finite element space" << std::endl;
 
         const FE_SimplexP<dim> fe_scalar_velocity(degree_velocity);
         const FE_SimplexP<dim> fe_scalar_pressure(degree_pressure);
-        fe = std::make_unique<FESystem<dim>>(fe_scalar_velocity, dim, fe_scalar_pressure, 1);
+        fe = std::make_unique<FESystem<dim>>(fe_scalar_velocity, dim,
+                                             fe_scalar_pressure, 1);
 
-        pcout << "  Velocity degree:           = " << fe_scalar_velocity.degree << std::endl;
-        pcout << "  Pressure degree:           = " << fe_scalar_pressure.degree << std::endl;
-        pcout << "  DoFs per cell              = " << fe->dofs_per_cell << std::endl;
+        pcout << "  Velocity degree:           = " << fe_scalar_velocity.degree
+              << std::endl;
+        pcout << "  Pressure degree:           = " << fe_scalar_pressure.degree
+              << std::endl;
+        pcout << "  DoFs per cell              = " << fe->dofs_per_cell
+              << std::endl;
 
         quadrature = std::make_unique<QGaussSimplex<dim>>(fe->degree + 1);
-        quadrature_boundary = std::make_unique<QGaussSimplex<dim - 1>>(fe->degree + 1);
+        quadrature_boundary =
+          std::make_unique<QGaussSimplex<dim - 1>>(fe->degree + 1);
 
-        pcout << "  Quadrature points per cell = " << quadrature->size() << std::endl;
-        pcout << "  Quadrature points per face = " << quadrature_boundary->size() << std::endl;
+        pcout << "  Quadrature points per cell = " << quadrature->size()
+              << std::endl;
+        pcout << "  Quadrature points per face = "
+              << quadrature_boundary->size() << std::endl;
     }
 
     pcout << "-----------------------------------------------" << std::endl;
 
-    // Initialize the DoF handler.
     {
         pcout << "Initializing the DoF handler" << std::endl;
 
-        dof_handler.reinit(mesh);
         dof_handler.distribute_dofs(*fe);
 
-        // We want to reorder DoFs so that all velocity DoFs come first, and then
-        // all pressure DoFs.
         std::vector<unsigned int> block_component(dim + 1, 0);
         block_component[dim] = 1;
         DoFRenumbering::component_wise(dof_handler, block_component);
 
         locally_owned_dofs = dof_handler.locally_owned_dofs();
-        locally_relevant_dofs = DoFTools::extract_locally_relevant_dofs(dof_handler);
+        locally_relevant_dofs =
+          DoFTools::extract_locally_relevant_dofs(dof_handler);
 
-
-        // Besides the locally owned and locally relevant indices for the whole
-        // system (velocity and pressure), we will also need those for the
-        // individual velocity and pressure blocks.
-        std::vector<types::global_dof_index> dofs_per_block = DoFTools::count_dofs_per_fe_block(dof_handler, block_component);
+        const std::vector<types::global_dof_index> dofs_per_block =
+          DoFTools::count_dofs_per_fe_block(dof_handler, block_component);
         const unsigned int n_u = dofs_per_block[0];
         const unsigned int n_p = dofs_per_block[1];
 
         block_owned_dofs.resize(2);
         block_relevant_dofs.resize(2);
-        block_owned_dofs[0]    = locally_owned_dofs.get_view(0, n_u);
-        block_owned_dofs[1]    = locally_owned_dofs.get_view(n_u, n_u + n_p);
+        block_owned_dofs[0] = locally_owned_dofs.get_view(0, n_u);
+        block_owned_dofs[1] = locally_owned_dofs.get_view(n_u, n_u + n_p);
         block_relevant_dofs[0] = locally_relevant_dofs.get_view(0, n_u);
         block_relevant_dofs[1] = locally_relevant_dofs.get_view(n_u, n_u + n_p);
 
@@ -83,47 +140,46 @@ void NavierStokes::setup()
 
     pcout << "-----------------------------------------------" << std::endl;
 
-    // Initialize the linear system.
     {
         pcout << "Initializing the linear system" << std::endl;
 
         pcout << "  Initializing the sparsity pattern" << std::endl;
 
-        // Velocity DoFs interact with other velocity DoFs (the weak formulation has
-        // terms involving u times v), and pressure DoFs interact with velocity DoFs
-        // (there are terms involving p times v or u times q). However, pressure
-        // DoFs do not interact with other pressure DoFs (there are no terms
-        // involving p times q). We build a table to store this information, so that
-        // the sparsity pattern can be built accordingly.
         Table<2, DoFTools::Coupling> coupling(dim + 1, dim + 1);
         for (unsigned int c = 0; c < dim + 1; ++c)
         {
             for (unsigned int d = 0; d < dim + 1; ++d)
             {
-                if (c == dim && d == dim) // pressure-pressure term
-                    coupling[c][d] = DoFTools::none;
-                else // other combinations
+                if (c == dim && d == dim)
+                    coupling[c][d] =
+                      (pressure_regularization > 0.0 ? DoFTools::always :
+                                                       DoFTools::none);
+                else
                     coupling[c][d] = DoFTools::always;
             }
         }
 
-        TrilinosWrappers::BlockSparsityPattern sparsity(block_owned_dofs, MPI_COMM_WORLD);
+        TrilinosWrappers::BlockSparsityPattern sparsity(block_owned_dofs,
+                                                        MPI_COMM_WORLD);
         DoFTools::make_sparsity_pattern(dof_handler, coupling, sparsity);
         sparsity.compress();
 
-        // We also build a sparsity pattern for the pressure mass matrix (for the preconditioner)
         for (unsigned int c = 0; c < dim + 1; ++c)
         {
             for (unsigned int d = 0; d < dim + 1; ++d)
             {
-                if (c == dim && d == dim) // pressure-pressure term
+                if (c == dim && d == dim)
                     coupling[c][d] = DoFTools::always;
-                else // other combinations
+                else
                     coupling[c][d] = DoFTools::none;
             }
         }
-        TrilinosWrappers::BlockSparsityPattern sparsity_pressure_mass(block_owned_dofs, MPI_COMM_WORLD);
-        DoFTools::make_sparsity_pattern(dof_handler, coupling, sparsity_pressure_mass);
+
+        TrilinosWrappers::BlockSparsityPattern sparsity_pressure_mass(
+          block_owned_dofs, MPI_COMM_WORLD);
+        DoFTools::make_sparsity_pattern(dof_handler,
+                                        coupling,
+                                        sparsity_pressure_mass);
         sparsity_pressure_mass.compress();
 
         pcout << "  Initializing the matrices" << std::endl;
@@ -136,145 +192,152 @@ void NavierStokes::setup()
         solution_owned.reinit(block_owned_dofs, MPI_COMM_WORLD);
         solution.reinit(block_owned_dofs, block_relevant_dofs, MPI_COMM_WORLD);
         old_solution.reinit(block_owned_dofs, block_relevant_dofs, MPI_COMM_WORLD);
+        linearization_point.reinit(block_owned_dofs,
+                                   block_relevant_dofs,
+                                   MPI_COMM_WORLD);
     }
 }
 
-void NavierStokes::assemble()
+template <int dim>
+void NavierStokes<dim>::assemble()
 {
     pcout << "===============================================" << std::endl;
     pcout << "Assembling the system" << std::endl;
 
     const unsigned int dofs_per_cell = fe->dofs_per_cell;
-    const unsigned int n_q           = quadrature->size();
-    const unsigned int n_q_face      = quadrature_boundary->size();
+    const unsigned int n_q = quadrature->size();
+    const unsigned int n_q_face = quadrature_boundary->size();
 
-    FEValues<dim> fe_values(*fe, *quadrature,
+    FEValues<dim> fe_values(*fe,
+                            *quadrature,
                             update_values | update_gradients |
-                            update_quadrature_points | update_JxW_values);
-    FEFaceValues<dim> fe_values_boundary(*fe, *quadrature_boundary,
-                                         update_values | update_normal_vectors | update_JxW_values);
+                              update_quadrature_points | update_JxW_values);
+    FEFaceValues<dim> fe_values_boundary(*fe,
+                                         *quadrature_boundary,
+                                         update_values | update_normal_vectors |
+                                           update_JxW_values);
 
-    // Local matrix and vector. 
+    
+                                           // check what does full matrix
     FullMatrix<double> cell_matrix(dofs_per_cell, dofs_per_cell);
     FullMatrix<double> cell_pressure_mass_matrix(dofs_per_cell, dofs_per_cell);
-    Vector<double>     cell_rhs(dofs_per_cell);
+    Vector<double> cell_rhs(dofs_per_cell);
 
     std::vector<types::global_dof_index> dof_indices(dofs_per_cell);
 
     system_matrix = 0.0;
-    system_rhs    = 0.0;
+    system_rhs = 0.0;
     pressure_mass = 0.0;
 
     FEValuesExtractors::Vector velocity(0);
     FEValuesExtractors::Scalar pressure(dim);
 
-    std::vector<Tensor<1, dim>> old_velocity_values(n_q);
-    std::vector<Tensor<2, dim>> old_velocity_grads(n_q);
+    std::vector<Tensor<1, dim>> previous_velocity_values(n_q);
+    std::vector<Tensor<2, dim>> previous_velocity_grads(n_q);
+    std::vector<Tensor<1, dim>> linearization_velocity_values(n_q);
 
-    const double prevTime = time - delta_t;
+    const double previous_time = time - delta_t;
     for (const auto &cell : dof_handler.active_cell_iterators())
     {
-        if (!cell->is_locally_owned()) continue;
+        if (!cell->is_locally_owned())
+            continue;
 
         fe_values.reinit(cell);
 
-        cell_matrix               = 0.0;
-        cell_rhs                  = 0.0;
+        cell_matrix = 0.0;
+        cell_rhs = 0.0;
         cell_pressure_mass_matrix = 0.0;
 
-        fe_values[velocity].get_function_values(old_solution, old_velocity_values);
-        fe_values[velocity].get_function_gradients(old_solution, old_velocity_grads);
+        fe_values[velocity].get_function_values(old_solution, previous_velocity_values);
+        fe_values[velocity].get_function_gradients(old_solution, previous_velocity_grads);
+        fe_values[velocity].get_function_values(linearization_point,
+                                                linearization_velocity_values);
 
         for (unsigned int q = 0; q < n_q; ++q)
         {
-            const Tensor<1, dim> f_new_loc = f(fe_values.quadrature_point(q), time); 
-            const Tensor<1, dim> f_old_loc = f(fe_values.quadrature_point(q), prevTime); 
-            const Tensor<1, dim> u_old = old_velocity_values[q];
-            const Tensor<2, dim> u_old_grad = old_velocity_grads[q];
+            const Tensor<1, dim> f_new_loc = f(fe_values.quadrature_point(q), time);
+            const Tensor<1, dim> f_old_loc =
+              f(fe_values.quadrature_point(q), previous_time);
+            const Tensor<1, dim> u_old = previous_velocity_values[q];
+            const Tensor<2, dim> u_old_grad = previous_velocity_grads[q];
+            const Tensor<1, dim> u_linearization = linearization_velocity_values[q];
 
             for (unsigned int i = 0; i < dofs_per_cell; ++i)
             {
                 const Tensor<1, dim> phi_vel_i = fe_values[velocity].value(i, q);
-                const Tensor<2, dim> grad_phi_vel_i = fe_values[velocity].gradient(i,q);
+                const Tensor<2, dim> grad_phi_vel_i =
+                  fe_values[velocity].gradient(i, q);
                 const double div_phi_vel_i = fe_values[velocity].divergence(i, q);
                 const double psi_i = fe_values[pressure].value(i, q);
 
                 for (unsigned int j = 0; j < dofs_per_cell; ++j)
-                {   
-
+                {
                     const Tensor<1, dim> phi_vel_j = fe_values[velocity].value(j, q);
-                    const Tensor<2, dim> grad_phi_vel_j = fe_values[velocity].gradient(j,q);
+                    const Tensor<2, dim> grad_phi_vel_j =
+                      fe_values[velocity].gradient(j, q);
                     const double div_phi_vel_j = fe_values[velocity].divergence(j, q);
                     const double psi_j = fe_values[pressure].value(j, q);
 
-                    // (M / \delta{t})
-                    cell_matrix(i, j) += 1.0/delta_t * 
-                                         scalar_product(phi_vel_j, phi_vel_i) * 
-                                         fe_values.JxW(q); 
-                    // Stiffness matrix
-                    cell_matrix(i, j) += theta * nu * 
-                                         scalar_product(grad_phi_vel_j, grad_phi_vel_i) * 
-                                         fe_values.JxW(q); 
-                    // Convection term
-                    cell_matrix(i, j) += theta * 
-                                         (grad_phi_vel_j * u_old) * phi_vel_i * 
-                                         fe_values.JxW(q); 
-                    // B
-                    cell_matrix(i, j) -= (psi_j * div_phi_vel_i) * 
-                                          fe_values.JxW(q);
+                    cell_matrix(i, j) +=
+                      1.0 / delta_t * scalar_product(phi_vel_j, phi_vel_i) *
+                      fe_values.JxW(q);
+                    cell_matrix(i, j) +=
+                      theta * nu * scalar_product(grad_phi_vel_j, grad_phi_vel_i) *
+                      fe_values.JxW(q);
+                    cell_matrix(i, j) +=
+                      theta * (grad_phi_vel_j * u_linearization) * phi_vel_i *
+                      fe_values.JxW(q);
+                    cell_matrix(i, j) -= psi_j * div_phi_vel_i * fe_values.JxW(q);
+                    cell_matrix(i, j) -= psi_i * div_phi_vel_j * fe_values.JxW(q);
 
-                    cell_matrix(i, j) -= (psi_i * div_phi_vel_j) * 
-                                         fe_values.JxW(q); 
-                    
-                    cell_pressure_mass_matrix(i, j) += psi_i * psi_j / nu * fe_values.JxW(q);
+                    cell_pressure_mass_matrix(i, j) +=
+                      psi_i * psi_j / nu * fe_values.JxW(q);
+                    cell_matrix(i, j) +=
+                      pressure_regularization * psi_i * psi_j *
+                      fe_values.JxW(q);
                 }
 
-                // Forcing term.
-                cell_rhs(i) += theta * f_new_loc *
-                               phi_vel_i * 
-                               fe_values.JxW(q); 
-                cell_rhs(i) += (1.0 - theta) * 
-                               f_old_loc * phi_vel_i * 
-                               fe_values.JxW(q); 
+                cell_rhs(i) += theta * f_new_loc * phi_vel_i * fe_values.JxW(q);
+                cell_rhs(i) +=
+                  (1.0 - theta) * f_old_loc * phi_vel_i * fe_values.JxW(q);
 
-                cell_rhs(i) += 1.0/delta_t * 
-                               u_old * phi_vel_i * 
-                               fe_values.JxW(q); 
-                               
-                cell_rhs(i) -= (1.0 - theta) * nu * 
-                                scalar_product(u_old_grad, grad_phi_vel_i) * 
-                                fe_values.JxW(q); 
-                cell_rhs(i) -= (1.0 - theta) * 
-                                (u_old_grad * u_old) * phi_vel_i * 
-                                fe_values.JxW(q);   
+                cell_rhs(i) +=
+                  1.0 / delta_t * u_old * phi_vel_i * fe_values.JxW(q);
+                cell_rhs(i) -=
+                  (1.0 - theta) * nu * scalar_product(u_old_grad, grad_phi_vel_i) *
+                  fe_values.JxW(q);
+                cell_rhs(i) -=
+                  (1.0 - theta) * (u_old_grad * u_old) * phi_vel_i *
+                  fe_values.JxW(q);
             }
         }
 
-        // Boundary integral for Neumann BCs.
+        // Border condition
         if (cell->at_boundary())
         {
-            for (unsigned int f = 0; f < cell->n_faces(); ++f)
+            for (unsigned int face = 0; face < cell->n_faces(); ++face)
             {
-                if (cell->face(f)->at_boundary())
-                {
-                    const types::boundary_id face_id = cell -> face(f) -> boundary_id(); 
-                    
-                    if(neumann.count(face_id))
-                    {
-                        fe_values_boundary.reinit(cell, f);
-                        const Function<dim>* boundary_function = neumann[face_id];
+                if (!cell->face(face)->at_boundary())
+                    continue;
 
-                        for (unsigned int q = 0; q < n_q_face; ++q)
-                        {
-                            double h_loc = boundary_function -> value(fe_values_boundary.quadrature_point(q));
-                            for (unsigned int i = 0; i < dofs_per_cell; ++i)
-                            {
-                                cell_rhs(i) += h_loc * 
-                                               scalar_product(fe_values_boundary.normal_vector(q), 
-                                                              fe_values_boundary[velocity].value(i, q)) *
-                                               fe_values_boundary.JxW(q);
-                            }
-                        }
+                const types::boundary_id face_id = cell->face(face)->boundary_id();
+                if (!neumann.count(face_id))
+                    continue;
+
+                fe_values_boundary.reinit(cell, face);
+                const Function<dim> *boundary_function = neumann[face_id];
+
+                for (unsigned int q = 0; q < n_q_face; ++q)
+                {
+                    const double h_loc =
+                      boundary_function->value(fe_values_boundary.quadrature_point(q));
+                    for (unsigned int i = 0; i < dofs_per_cell; ++i)
+                    {
+                        cell_rhs(i) +=
+                          h_loc *
+                          scalar_product(fe_values_boundary.normal_vector(q),
+                                         fe_values_boundary[velocity].value(i, q)) *
+                          fe_values_boundary.JxW(q);
                     }
                 }
             }
@@ -291,138 +354,65 @@ void NavierStokes::assemble()
     system_rhs.compress(VectorOperation::add);
     pressure_mass.compress(VectorOperation::add);
 
-    // Dirichlet boundary conditions
-    {
-        std::map<types::global_dof_index, double> boundary_values;
+    std::map<types::global_dof_index, double> boundary_values;
 
-        ComponentMask mask_velocity(dim + 1, true);
-        mask_velocity.set(dim, false);
+    // Mask for dirichlet
+    ComponentMask mask_velocity(dim + 1, true);
+    mask_velocity.set(dim, false);
 
-        VectorTools::interpolate_boundary_values(dof_handler,
-                                                 dirichlet, 
-                                                 boundary_values,
-                                                 mask_velocity); 
+    VectorTools::interpolate_boundary_values(dof_handler,
+                                             dirichlet,
+                                             boundary_values,
+                                             mask_velocity);
 
-        MatrixTools::apply_boundary_values(boundary_values, system_matrix, solution_owned, system_rhs, false);
-    }
+    MatrixTools::apply_boundary_values(boundary_values,
+                                       system_matrix,
+                                       solution_owned,
+                                       system_rhs,
+                                       true);
 }
 
-void NavierStokes::solve()
+template <int dim>
+void NavierStokes<dim>::solve()
 {
     pcout << "===============================================" << std::endl;
-    SolverControl solver_control(100000, 1e-2 * system_rhs.l2_norm());
 
-    SolverGMRES<TrilinosWrappers::MPI::BlockVector> solver(solver_control);
-
-    // PreconditionBlockDiagonal preconditioner;
-    // preconditioner.initialize(system_matrix.block(0, 0),
-    //                           pressure_mass.block(1, 1));
-
-    PreconditionBlockTriangular preconditioner;
-    preconditioner.initialize(system_matrix.block(0, 0),
-                                pressure_mass.block(1, 1),
-                                system_matrix.block(1, 0));
+    // Check if GMRES or FGMRES
+    const double rhs_norm = system_rhs.l2_norm();
+    const double linear_tolerance =
+      std::max(linear_absolute_tolerance, linear_relative_tolerance * rhs_norm);
+    SolverControl solver_control(linear_max_iterations, linear_tolerance);
+    SolverGMRES<TrilinosWrappers::MPI::BlockVector>::AdditionalData additional_data(
+      gmres_restart_length);
+    SolverGMRES<TrilinosWrappers::MPI::BlockVector> solver(solver_control,
+                                                           additional_data);
 
     pcout << "Solving the linear system" << std::endl;
+    pcout << "  RHS norm = " << rhs_norm
+          << ", tol = " << linear_tolerance
+          << ", max iters = " << linear_max_iterations
+          << ", GMRES restart = " << gmres_restart_length << std::endl;
 
-    solution_owned = 0.0;
+    solution_owned = linearization_point;
 
+    // Baseline for the preconditioner ----- #TODO
+    PreconditionIdentity preconditioner;
     solver.solve(system_matrix, solution_owned, system_rhs, preconditioner);
-    pcout << "  " << solver_control.last_step() << " GMRES iterations" << std::endl;
+
+    pcout << "  " << solver_control.last_step() << " GMRES iterations"
+          << std::endl;
 }
 
-void NavierStokes::compute_forces()
-{
-
-    const unsigned int n_q_face = quadrature_boundary->size();
-
-    // Drag Force
-    double force_x = 0.0;
-
-    //Lift Force
-    double force_y = 0.0;
-
-    FEFaceValues<dim> fe_face_values(*fe, *quadrature_boundary,
-                                     update_values | update_gradients | 
-                                     update_normal_vectors | update_JxW_values);
-    
-    FEValuesExtractors::Vector velocity(0);
-    FEValuesExtractors::Scalar pressure(dim);
-
-    std::vector<Tensor<2, dim>> grad_u(n_q_face);
-    std::vector<double> p(n_q_face);
-    std::vector<Tensor<1,dim>> normal(n_q_face);
-
-    for(const auto &cell : dof_handler.active_cell_iterators())
-    {
-        if(!cell -> is_locally_owned())
-        continue;
-        if(cell ->at_boundary())
-        {
-        for (unsigned int f = 0; f < cell->n_faces(); ++f)
-        {
-            if(cell -> face(f) ->at_boundary() && 
-            cell ->face(f) -> boundary_id() == 5)
-            {
-            fe_face_values.reinit(cell, f);
-
-            fe_face_values[velocity].get_function_gradients(solution, grad_u);
-            fe_face_values[pressure].get_function_values(solution, p);
-
-            normal = fe_face_values.get_normal_vectors();
-
-            for(unsigned int q = 0; q < n_q_face; ++q)
-            {
-                //sigma = -p * I + nu*(grad_u + grad_u^T)
-                Tensor<2, dim> stress;
-
-                for(unsigned int i = 0; i < dim; ++i)
-                for(unsigned int j = 0; j < dim; ++j)
-                    stress[i][j] = nu * (grad_u[q][i][j] + grad_u[q][j][i]);
-                
-                for(unsigned int i = 0; i < dim; ++i)
-                stress[i][i] -= p[q];    
-                
-                Tensor<1, dim> traction = stress * normal[q];
-                
-                force_x += traction[0] * fe_face_values.JxW(q);
-                force_y += traction[1] * fe_face_values.JxW(q);
-            }
-            }
-        }
-        }  
-    }
-    double total_force_x = Utilities::MPI::sum(force_x, MPI_COMM_WORLD);
-    double total_force_y = Utilities::MPI::sum(force_y, MPI_COMM_WORLD);
-
-    // Coefficient
-    const double U_mean = 0.1;
-    const double L = 25;
-    const double den = U_mean * U_mean * L;
-
-    // Drag Coefficient
-    double C_D = total_force_x / den;
-
-    // Lift Coefficient
-    double C_L = total_force_y / den;
-
-    if(mpi_rank == 0) 
-    {
-        pcout << "   Step " << timestep_number << " Forces: Drag=" << total_force_x << ", Lift=" << total_force_y << std::endl;
-        pcout << "   Coeffs: Cd=" << C_D << ", Cl=" << C_L << std::endl;
-
-        std::ofstream file("coefficients.txt", std::ios::app);
-        file << time << " " << C_D << " " << C_L << std::endl;
-    }
-}
-
-void NavierStokes::output()
+template <int dim>
+void NavierStokes<dim>::output()
 {
     pcout << "===============================================" << std::endl;
 
     DataOut<dim> data_out;
 
-    std::vector<DataComponentInterpretation::DataComponentInterpretation> interpretation(dim, DataComponentInterpretation::component_is_part_of_vector);
+    std::vector<DataComponentInterpretation::DataComponentInterpretation>
+      interpretation(dim,
+                     DataComponentInterpretation::component_is_part_of_vector);
     interpretation.push_back(DataComponentInterpretation::component_is_scalar);
 
     std::vector<std::string> names(dim, "velocity");
@@ -436,56 +426,141 @@ void NavierStokes::output()
     data_out.add_data_vector(partitioning, "partitioning");
 
     data_out.build_patches();
-    
-    const std::string filename_prefix = "solution-";
 
-    data_out.write_vtu_with_pvtu_record("./",
+    const fs::path folder_path = output_folder();
+    std::string folder = folder_path.generic_string();
+    if (!folder.empty() && folder.back() != '/')
+        folder += '/';
+
+    const std::string filename_prefix = "solution";
+
+    data_out.write_vtu_with_pvtu_record(folder,
                                         filename_prefix,
                                         timestep_number,
                                         MPI_COMM_WORLD);
+
+    if (mpi_rank == 0)
+    {
+        const std::string pvtu_filename =
+          filename_prefix + "_" + std::to_string(timestep_number) + ".pvtu";
+        times_and_names.push_back({time, pvtu_filename});
+
+        std::ofstream pvd_file((folder_path / "solution.pvd").string());
+        DataOutBase::write_pvd_record(pvd_file, times_and_names);
+    }
 
     pcout << "Output written for step " << timestep_number << "..." << std::endl;
     pcout << "===============================================" << std::endl;
 }
 
-
-void NavierStokes::run()
+template <int dim>
+void NavierStokes<dim>::run()
 {
+    if (mpi_rank == 0)
     {
-        pcout << "===============================================" << std::endl;
-        pcout << "   Running Navier-Stokes Simulation" << std::endl;
-        pcout << "   T_final = " << T << ", dt = " << delta_t << std::endl;
-        pcout << "===============================================" << std::endl;
-        
-        setup(); 
-        
-        VectorTools::interpolate(dof_handler, *initial_condition, solution_owned);
-        solution = solution_owned;
-
-        time            = 0.0;
-        timestep_number = 0;
-
-        output(); 
+        const fs::path folder = output_folder();
+        if (!fs::exists(folder))
+            fs::create_directories(folder);
     }
+    MPI_Barrier(MPI_COMM_WORLD);
 
     pcout << "===============================================" << std::endl;
+    pcout << "   Running " << simulation_name() << std::endl;
+    pcout << "   T_final = " << T << ", dt = " << delta_t << std::endl;
+    pcout << "   Picard max iters = " << nonlinear_max_iterations
+          << ", tol = " << nonlinear_tolerance << std::endl;
+    pcout << "   GMRES restart = " << gmres_restart_length
+          << ", pressure regularization = " << pressure_regularization
+          << std::endl;
+    pcout << "   Linear max iters = " << linear_max_iterations
+          << ", rel tol = " << linear_relative_tolerance
+          << ", abs tol = " << linear_absolute_tolerance << std::endl;
+    pcout << "===============================================" << std::endl;
 
-    // Time-stepping loop.
+    setup();
+
+    Functions::ZeroFunction<dim> zero_initial(dim + 1);
+    if (initial_condition)
+        VectorTools::interpolate(dof_handler, *initial_condition, solution_owned);
+    else
+        VectorTools::interpolate(dof_handler, zero_initial, solution_owned);
+
+    solution = solution_owned;
+    old_solution = solution;
+    linearization_point = solution;
+    time = 0.0;
+    timestep_number = 0;
+    times_and_names.clear();
+
+    output();
+
     while (time < T - 0.5 * delta_t)
     {
         time += delta_t;
         ++timestep_number;
 
-        pcout << "Timestep " << std::setw(3) << timestep_number << ", time = " << std::setw(4) << std::fixed << std::setprecision(2) << time << " : \n";
+        pcout << "Timestep " << std::setw(3) << timestep_number
+              << ", time = " << std::setw(4) << std::fixed
+              << std::setprecision(2) << time << " :\n";
 
-        assemble();
-        solve();
-        compute_forces(); 
+        old_solution = solution;
+        linearization_point = old_solution;
+        solution_owned = old_solution;
 
-        solution = solution_owned;
+        double relative_picard_update = 0.0;
+        bool nonlinear_converged = false;
 
+        for (unsigned int nonlinear_iteration = 1;
+             nonlinear_iteration <= nonlinear_max_iterations;
+             ++nonlinear_iteration)
+        {
+            pcout << "  Picard iteration " << nonlinear_iteration << std::endl;
+
+            TrilinosWrappers::MPI::BlockVector previous_linearization_owned;
+            previous_linearization_owned.reinit(block_owned_dofs, MPI_COMM_WORLD);
+            previous_linearization_owned = linearization_point;
+
+            assemble();
+            solve();
+
+            solution = solution_owned;
+
+            TrilinosWrappers::MPI::BlockVector picard_update_owned;
+            picard_update_owned.reinit(block_owned_dofs, MPI_COMM_WORLD);
+            picard_update_owned = solution_owned;
+            picard_update_owned -= previous_linearization_owned;
+
+            const double solution_norm = std::max(1.0, solution_owned.l2_norm());
+            relative_picard_update = picard_update_owned.l2_norm() / solution_norm;
+
+            pcout << "    Relative Picard update = "
+                  << relative_picard_update << std::endl;
+
+            if (relative_picard_update < nonlinear_tolerance)
+            {
+                nonlinear_converged = true;
+                break;
+            }
+
+            linearization_point = solution;
+        }
+
+        if (!nonlinear_converged)
+            pcout << "  Picard iteration stopped after "
+                  << nonlinear_max_iterations
+                  << " iterations with relative update "
+                  << relative_picard_update << std::endl;
+
+        if (dim == 2 && mpi_rank == 0 && timestep_number == 1)
+            std::ofstream("coefficients.txt", std::ios::trunc);
+
+        compute_forces();
         output();
+        old_solution = solution;
     }
-
-    
 }
+
+template class NavierStokes<2>;
+template class NavierStokes<3>;
+
+

@@ -1,0 +1,36 @@
+subsection Mesh and discretization
+  set Mesh file = ../mesh/ns-mesh2D-level2.msh
+  set Velocity degree = 2
+  set Pressure degree = 1
+  set Final time = 1
+  set Theta = 1.0
+  set Time step = 0.01
+end
+
+subsection Solver
+  set Nonlinear iterations = 8
+  set Nonlinear tolerance = 1e-6
+  set GMRES restart length = 800
+  set Pressure regularization = 1e-4
+  set Linear max iterations = 100000
+  set Linear relative tolerance = 5e-2
+  set Linear absolute tolerance = 2e-2
+end
+
+subsection Physics
+  set Viscosity = 0.5
+  set Inlet velocity = 10
+  set Outlet pressure = 0.0
+end
+
+subsection Force coefficients
+  set Reference velocity = 10
+  set Reference length = 25.0
+end
+
+subsection Boundary ids
+  set Inlet = 1
+  set Outlet = 2
+  set Walls = 3
+  set Cylinder = 5
+end
