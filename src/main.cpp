@@ -28,6 +28,13 @@ int main(int argc, char *argv[])
                            parameters.T,
                            parameters.theta,
                            parameters.delta_t);
+    problem.set_nonlinear_solver_parameters(parameters.nonlinear_max_iterations,
+                                            parameters.nonlinear_tolerance);
+    problem.set_linear_solver_parameters(parameters.gmres_restart_length,
+                                         parameters.pressure_regularization,
+                                         parameters.linear_max_iterations,
+                                         parameters.linear_relative_tolerance,
+                                         parameters.linear_absolute_tolerance);
 
     FlowPastCylinder2DCase benchmark_case(parameters);
     benchmark_case.apply_to(problem);

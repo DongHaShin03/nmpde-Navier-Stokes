@@ -7,19 +7,27 @@
 
 struct FlowPastCylinder2DParameters
 {
-    std::string mesh_file_name = "../mesh/ns-mesh2D-level0.msh";
+    std::string mesh_file_name = "../mesh/ns-mesh2D-level1.msh";
     unsigned int degree_velocity = 2;
     unsigned int degree_pressure = 1;
 
-    double nu = 0.05;
-    double T = 1.0;
+    double nu = 0.5;
+    double T = 0.05;
     double theta = 1.0;
-    double delta_t = 0.01;
+    double delta_t = 0.0025;
 
-    double inlet_velocity = 1.0;
-    double outlet_pressure = -1.0;
+    unsigned int nonlinear_max_iterations = 8;
+    double nonlinear_tolerance = 1e-6;
+    unsigned int gmres_restart_length = 800;
+    double pressure_regularization = 1e-4;
+    unsigned int linear_max_iterations = 100000;
+    double linear_relative_tolerance = 5e-2;
+    double linear_absolute_tolerance = 2e-2;
 
-    double force_coefficient_reference_velocity = 0.1;
+    double inlet_velocity = 0.05;
+    double outlet_pressure = 0.0;
+
+    double force_coefficient_reference_velocity = 0.05;
     double force_coefficient_reference_length = 25.0;
 
     types::boundary_id inlet_boundary_id = 1;

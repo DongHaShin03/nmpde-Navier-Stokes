@@ -4,23 +4,33 @@ void FlowPastCylinder2DParameters::declare_parameters(ParameterHandler &prm)
 {
     prm.enter_subsection("Mesh and discretization");
     prm.declare_entry("Mesh file",
-                      "../mesh/ns-mesh2D-level0.msh",
+                      "../mesh/ns-mesh2D-level1.msh",
                       Patterns::Anything());
     prm.declare_entry("Velocity degree", "2", Patterns::Integer(1));
     prm.declare_entry("Pressure degree", "1", Patterns::Integer(1));
-    prm.declare_entry("Final time", "1.0", Patterns::Double(0.0));
+    prm.declare_entry("Final time", "0.05", Patterns::Double(0.0));
     prm.declare_entry("Theta", "1.0", Patterns::Double(0.0, 1.0));
-    prm.declare_entry("Time step", "0.01", Patterns::Double(0.0));
+    prm.declare_entry("Time step", "0.0025", Patterns::Double(0.0));
+    prm.leave_subsection();
+
+    prm.enter_subsection("Solver");
+    prm.declare_entry("Nonlinear iterations", "8", Patterns::Integer(1));
+    prm.declare_entry("Nonlinear tolerance", "1e-6", Patterns::Double(0.0));
+    prm.declare_entry("GMRES restart length", "800", Patterns::Integer(1));
+    prm.declare_entry("Pressure regularization", "1e-4", Patterns::Double(0.0));
+    prm.declare_entry("Linear max iterations", "100000", Patterns::Integer(1));
+    prm.declare_entry("Linear relative tolerance", "5e-2", Patterns::Double(0.0));
+    prm.declare_entry("Linear absolute tolerance", "2e-2", Patterns::Double(0.0));
     prm.leave_subsection();
 
     prm.enter_subsection("Physics");
-    prm.declare_entry("Viscosity", "0.05", Patterns::Double(0.0));
-    prm.declare_entry("Inlet velocity", "1.0", Patterns::Double(0.0));
-    prm.declare_entry("Outlet pressure", "-1.0", Patterns::Double());
+    prm.declare_entry("Viscosity", "0.5", Patterns::Double(0.0));
+    prm.declare_entry("Inlet velocity", "0.05", Patterns::Double(0.0));
+    prm.declare_entry("Outlet pressure", "0.0", Patterns::Double());
     prm.leave_subsection();
 
     prm.enter_subsection("Force coefficients");
-    prm.declare_entry("Reference velocity", "0.1", Patterns::Double(0.0));
+    prm.declare_entry("Reference velocity", "0.05", Patterns::Double(0.0));
     prm.declare_entry("Reference length", "25.0", Patterns::Double(0.0));
     prm.leave_subsection();
 
@@ -41,6 +51,19 @@ void FlowPastCylinder2DParameters::parse_parameters(ParameterHandler &prm)
     T = prm.get_double("Final time");
     theta = prm.get_double("Theta");
     delta_t = prm.get_double("Time step");
+    prm.leave_subsection();
+
+    prm.enter_subsection("Solver");
+    nonlinear_max_iterations =
+      static_cast<unsigned int>(prm.get_integer("Nonlinear iterations"));
+    nonlinear_tolerance = prm.get_double("Nonlinear tolerance");
+    gmres_restart_length =
+      static_cast<unsigned int>(prm.get_integer("GMRES restart length"));
+    pressure_regularization = prm.get_double("Pressure regularization");
+    linear_max_iterations =
+      static_cast<unsigned int>(prm.get_integer("Linear max iterations"));
+    linear_relative_tolerance = prm.get_double("Linear relative tolerance");
+    linear_absolute_tolerance = prm.get_double("Linear absolute tolerance");
     prm.leave_subsection();
 
     prm.enter_subsection("Physics");
@@ -123,8 +146,6 @@ void FlowPastCylinder2DCase::apply_to(NavierStokes2D &problem)
     problem.dirichlet[walls_boundary_id] = &zero_velocity;
     problem.dirichlet[cylinder_boundary_id] = &zero_velocity;
     problem.neumann[outlet_boundary_id] = &outlet;
-    problem.initial_condition =
-      std::make_unique<FlowPastCylinder2DInlet>(inlet.speed());
     problem.set_force_coefficient_parameters(force_coefficient_reference_velocity,
                                              force_coefficient_reference_length,
                                              cylinder_boundary_id);

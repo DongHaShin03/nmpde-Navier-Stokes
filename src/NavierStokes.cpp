@@ -31,6 +31,30 @@ NavierStokes<dim>::NavierStokes(const std::string  &mesh_file_name_,
 {}
 
 template <int dim>
+void NavierStokes<dim>::set_nonlinear_solver_parameters(
+  const unsigned int max_iterations,
+  const double       tolerance)
+{
+    nonlinear_max_iterations = std::max(1u, max_iterations);
+    nonlinear_tolerance = std::max(1e-12, tolerance);
+}
+
+template <int dim>
+void NavierStokes<dim>::set_linear_solver_parameters(
+  const unsigned int gmres_restart_length_,
+  const double       pressure_regularization_,
+  const unsigned int linear_max_iterations_,
+  const double       linear_relative_tolerance_,
+  const double       linear_absolute_tolerance_)
+{
+    gmres_restart_length = std::max(1u, gmres_restart_length_);
+    pressure_regularization = std::max(0.0, pressure_regularization_);
+    linear_max_iterations = std::max(1u, linear_max_iterations_);
+    linear_relative_tolerance = std::max(0.0, linear_relative_tolerance_);
+    linear_absolute_tolerance = std::max(0.0, linear_absolute_tolerance_);
+}
+
+template <int dim>
 void NavierStokes<dim>::setup()
 {
     {
@@ -127,7 +151,9 @@ void NavierStokes<dim>::setup()
             for (unsigned int d = 0; d < dim + 1; ++d)
             {
                 if (c == dim && d == dim)
-                    coupling[c][d] = DoFTools::none;
+                    coupling[c][d] =
+                      (pressure_regularization > 0.0 ? DoFTools::always :
+                                                       DoFTools::none);
                 else
                     coupling[c][d] = DoFTools::always;
             }
@@ -166,6 +192,9 @@ void NavierStokes<dim>::setup()
         solution_owned.reinit(block_owned_dofs, MPI_COMM_WORLD);
         solution.reinit(block_owned_dofs, block_relevant_dofs, MPI_COMM_WORLD);
         old_solution.reinit(block_owned_dofs, block_relevant_dofs, MPI_COMM_WORLD);
+        linearization_point.reinit(block_owned_dofs,
+                                   block_relevant_dofs,
+                                   MPI_COMM_WORLD);
     }
 }
 
@@ -203,8 +232,9 @@ void NavierStokes<dim>::assemble()
     FEValuesExtractors::Vector velocity(0);
     FEValuesExtractors::Scalar pressure(dim);
 
-    std::vector<Tensor<1, dim>> old_velocity_values(n_q);
-    std::vector<Tensor<2, dim>> old_velocity_grads(n_q);
+    std::vector<Tensor<1, dim>> previous_velocity_values(n_q);
+    std::vector<Tensor<2, dim>> previous_velocity_grads(n_q);
+    std::vector<Tensor<1, dim>> linearization_velocity_values(n_q);
 
     const double previous_time = time - delta_t;
     for (const auto &cell : dof_handler.active_cell_iterators())
@@ -218,16 +248,19 @@ void NavierStokes<dim>::assemble()
         cell_rhs = 0.0;
         cell_pressure_mass_matrix = 0.0;
 
-        fe_values[velocity].get_function_values(old_solution, old_velocity_values);
-        fe_values[velocity].get_function_gradients(old_solution, old_velocity_grads);
+        fe_values[velocity].get_function_values(old_solution, previous_velocity_values);
+        fe_values[velocity].get_function_gradients(old_solution, previous_velocity_grads);
+        fe_values[velocity].get_function_values(linearization_point,
+                                                linearization_velocity_values);
 
         for (unsigned int q = 0; q < n_q; ++q)
         {
             const Tensor<1, dim> f_new_loc = f(fe_values.quadrature_point(q), time);
             const Tensor<1, dim> f_old_loc =
               f(fe_values.quadrature_point(q), previous_time);
-            const Tensor<1, dim> u_old = old_velocity_values[q];
-            const Tensor<2, dim> u_old_grad = old_velocity_grads[q];
+            const Tensor<1, dim> u_old = previous_velocity_values[q];
+            const Tensor<2, dim> u_old_grad = previous_velocity_grads[q];
+            const Tensor<1, dim> u_linearization = linearization_velocity_values[q];
 
             for (unsigned int i = 0; i < dofs_per_cell; ++i)
             {
@@ -252,13 +285,16 @@ void NavierStokes<dim>::assemble()
                       theta * nu * scalar_product(grad_phi_vel_j, grad_phi_vel_i) *
                       fe_values.JxW(q);
                     cell_matrix(i, j) +=
-                      theta * (grad_phi_vel_j * u_old) * phi_vel_i *
+                      theta * (grad_phi_vel_j * u_linearization) * phi_vel_i *
                       fe_values.JxW(q);
                     cell_matrix(i, j) -= psi_j * div_phi_vel_i * fe_values.JxW(q);
                     cell_matrix(i, j) -= psi_i * div_phi_vel_j * fe_values.JxW(q);
 
                     cell_pressure_mass_matrix(i, j) +=
                       psi_i * psi_j / nu * fe_values.JxW(q);
+                    cell_matrix(i, j) +=
+                      pressure_regularization * psi_i * psi_j *
+                      fe_values.JxW(q);
                 }
 
                 cell_rhs(i) += theta * f_new_loc * phi_vel_i * fe_values.JxW(q);
@@ -333,7 +369,7 @@ void NavierStokes<dim>::assemble()
                                        system_matrix,
                                        solution_owned,
                                        system_rhs,
-                                       false);
+                                       true);
 }
 
 template <int dim>
@@ -342,13 +378,22 @@ void NavierStokes<dim>::solve()
     pcout << "===============================================" << std::endl;
 
     // Check if GMRES or FGMRES
-    const double linear_tolerance = std::max(1e-12, 1e-2 * system_rhs.l2_norm());
-    SolverControl solver_control(100000, linear_tolerance);
-    SolverGMRES<TrilinosWrappers::MPI::BlockVector> solver(solver_control);
+    const double rhs_norm = system_rhs.l2_norm();
+    const double linear_tolerance =
+      std::max(linear_absolute_tolerance, linear_relative_tolerance * rhs_norm);
+    SolverControl solver_control(linear_max_iterations, linear_tolerance);
+    SolverGMRES<TrilinosWrappers::MPI::BlockVector>::AdditionalData additional_data(
+      gmres_restart_length);
+    SolverGMRES<TrilinosWrappers::MPI::BlockVector> solver(solver_control,
+                                                           additional_data);
 
     pcout << "Solving the linear system" << std::endl;
+    pcout << "  RHS norm = " << rhs_norm
+          << ", tol = " << linear_tolerance
+          << ", max iters = " << linear_max_iterations
+          << ", GMRES restart = " << gmres_restart_length << std::endl;
 
-    solution_owned = 0.0;
+    solution_owned = linearization_point;
 
     // Baseline for the preconditioner ----- #TODO
     PreconditionIdentity preconditioner;
@@ -382,7 +427,11 @@ void NavierStokes<dim>::output()
 
     data_out.build_patches();
 
-    const std::string folder = output_folder();
+    const fs::path folder_path = output_folder();
+    std::string folder = folder_path.generic_string();
+    if (!folder.empty() && folder.back() != '/')
+        folder += '/';
+
     const std::string filename_prefix = "solution";
 
     data_out.write_vtu_with_pvtu_record(folder,
@@ -396,7 +445,7 @@ void NavierStokes<dim>::output()
           filename_prefix + "_" + std::to_string(timestep_number) + ".pvtu";
         times_and_names.push_back({time, pvtu_filename});
 
-        std::ofstream pvd_file(folder + "/solution.pvd");
+        std::ofstream pvd_file((folder_path / "solution.pvd").string());
         DataOutBase::write_pvd_record(pvd_file, times_and_names);
     }
 
@@ -411,13 +460,21 @@ void NavierStokes<dim>::run()
     {
         const fs::path folder = output_folder();
         if (!fs::exists(folder))
-            fs::create_directory(folder);
+            fs::create_directories(folder);
     }
     MPI_Barrier(MPI_COMM_WORLD);
 
     pcout << "===============================================" << std::endl;
     pcout << "   Running " << simulation_name() << std::endl;
     pcout << "   T_final = " << T << ", dt = " << delta_t << std::endl;
+    pcout << "   Picard max iters = " << nonlinear_max_iterations
+          << ", tol = " << nonlinear_tolerance << std::endl;
+    pcout << "   GMRES restart = " << gmres_restart_length
+          << ", pressure regularization = " << pressure_regularization
+          << std::endl;
+    pcout << "   Linear max iters = " << linear_max_iterations
+          << ", rel tol = " << linear_relative_tolerance
+          << ", abs tol = " << linear_absolute_tolerance << std::endl;
     pcout << "===============================================" << std::endl;
 
     setup();
@@ -430,6 +487,7 @@ void NavierStokes<dim>::run()
 
     solution = solution_owned;
     old_solution = solution;
+    linearization_point = solution;
     time = 0.0;
     timestep_number = 0;
     times_and_names.clear();
@@ -445,10 +503,53 @@ void NavierStokes<dim>::run()
               << ", time = " << std::setw(4) << std::fixed
               << std::setprecision(2) << time << " :\n";
 
-        assemble();
-        solve();
+        old_solution = solution;
+        linearization_point = old_solution;
+        solution_owned = old_solution;
 
-        solution = solution_owned;
+        double relative_picard_update = 0.0;
+        bool nonlinear_converged = false;
+
+        for (unsigned int nonlinear_iteration = 1;
+             nonlinear_iteration <= nonlinear_max_iterations;
+             ++nonlinear_iteration)
+        {
+            pcout << "  Picard iteration " << nonlinear_iteration << std::endl;
+
+            TrilinosWrappers::MPI::BlockVector previous_linearization_owned;
+            previous_linearization_owned.reinit(block_owned_dofs, MPI_COMM_WORLD);
+            previous_linearization_owned = linearization_point;
+
+            assemble();
+            solve();
+
+            solution = solution_owned;
+
+            TrilinosWrappers::MPI::BlockVector picard_update_owned;
+            picard_update_owned.reinit(block_owned_dofs, MPI_COMM_WORLD);
+            picard_update_owned = solution_owned;
+            picard_update_owned -= previous_linearization_owned;
+
+            const double solution_norm = std::max(1.0, solution_owned.l2_norm());
+            relative_picard_update = picard_update_owned.l2_norm() / solution_norm;
+
+            pcout << "    Relative Picard update = "
+                  << relative_picard_update << std::endl;
+
+            if (relative_picard_update < nonlinear_tolerance)
+            {
+                nonlinear_converged = true;
+                break;
+            }
+
+            linearization_point = solution;
+        }
+
+        if (!nonlinear_converged)
+            pcout << "  Picard iteration stopped after "
+                  << nonlinear_max_iterations
+                  << " iterations with relative update "
+                  << relative_picard_update << std::endl;
 
         if (dim == 2 && mpi_rank == 0 && timestep_number == 1)
             std::ofstream("coefficients.txt", std::ios::trunc);

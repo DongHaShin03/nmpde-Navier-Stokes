@@ -58,6 +58,13 @@ class NavierStokes
         virtual ~NavierStokes() = default;
 
         void run();
+        void set_nonlinear_solver_parameters(const unsigned int max_iterations,
+                                             const double       tolerance);
+        void set_linear_solver_parameters(const unsigned int gmres_restart_length_,
+                                          const double       pressure_regularization_,
+                                          const unsigned int linear_max_iterations_,
+                                          const double       linear_relative_tolerance_,
+                                          const double       linear_absolute_tolerance_);
 
         std::unique_ptr<Function<dim>> initial_condition;
         std::map<types::boundary_id, const Function<dim> *> dirichlet;
@@ -106,8 +113,17 @@ class NavierStokes
         TrilinosWrappers::MPI::BlockVector solution_owned;
         TrilinosWrappers::MPI::BlockVector solution;
         TrilinosWrappers::MPI::BlockVector old_solution;
+        TrilinosWrappers::MPI::BlockVector linearization_point;
 
         std::vector<std::pair<double, std::string>> times_and_names;
+
+        unsigned int nonlinear_max_iterations = 4;
+        double nonlinear_tolerance = 1e-6;
+        unsigned int gmres_restart_length = 200;
+        double pressure_regularization = 1e-8;
+        unsigned int linear_max_iterations = 100000;
+        double linear_relative_tolerance = 1e-2;
+        double linear_absolute_tolerance = 1e-12;
 
         ConditionalOStream pcout;
 };
