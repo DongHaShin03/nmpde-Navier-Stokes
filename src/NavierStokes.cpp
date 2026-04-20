@@ -1,4 +1,5 @@
 #include "NavierStokes.hpp"
+#include "preconditioners/preconditioner.hpp"
 
 #include <algorithm>
 #include <filesystem>
@@ -396,7 +397,11 @@ void NavierStokes<dim>::solve()
     solution_owned = linearization_point;
 
     // Baseline for the preconditioner ----- #TODO
-    PreconditionIdentity preconditioner;
+    //PreconditionIdentity preconditioner;
+    PreconditionerSIMPLE preconditioner;
+    preconditioner.initialize(system_matrix.block(0, 0), system_matrix.block(1, 0), system_matrix.block(0, 1), solution_owned);
+
+
     solver.solve(system_matrix, solution_owned, system_rhs, preconditioner);
 
     pcout << "  " << solver_control.last_step() << " GMRES iterations"

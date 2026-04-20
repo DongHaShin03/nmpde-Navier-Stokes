@@ -69,13 +69,13 @@ class PreconditionerSIMPLE{
     void
     initialize(const TrilinosWrappers::SparseMatrix &F_,
                const TrilinosWrappers::SparseMatrix &B_,
-               const TrilinosWrappers::SparseMatrix &B_T,
+               const TrilinosWrappers::SparseMatrix &B_t,
                const TrilinosWrappers::MPI::BlockVector &sol_owned 
             )
     {
       F = &F_; 
       B = &B_;
-      B_T = &B_T;
+      B_T = &B_t;
 
       neg_diag_D_inv.reinit(sol_owned.block(0)); //(-D)^-1
       diag_D_inv.reinit(sol_owned.block(0));  //D^-1
@@ -160,3 +160,4 @@ class PreconditionerSIMPLE{
 //TODO aSimple
 //TODO PCD
 //TODO S= pressure matrix o laplacian pressure
+#endif
