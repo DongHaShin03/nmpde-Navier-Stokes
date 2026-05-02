@@ -67,86 +67,100 @@ class PreconditionerSIMPLE{
     public:
     // Initialize the preconditioner,
     void
-    initialize(const TrilinosWrappers::SparseMatrix &F_,
-               const TrilinosWrappers::SparseMatrix &B_,
-               const TrilinosWrappers::SparseMatrix &B_t,
+    initialize(const TrilinosWrappers::SparseMatrix &F_, //VELOCITY BLOCK
+               const TrilinosWrappers::SparseMatrix &B_, //divergence block, stored as -B_incomp
+               const TrilinosWrappers::SparseMatrix &B_t_, //gradient block
                const TrilinosWrappers::MPI::BlockVector &sol_owned 
             )
     {
       F = &F_; 
       B = &B_;
-      B_T = &B_t;
+      B_T = &B_t_;
 
       neg_diag_D_inv.reinit(sol_owned.block(0)); //(-D)^-1
       diag_D_inv.reinit(sol_owned.block(0));  //D^-1
+      
 
       //construct diagDinv and neg:
       for(unsigned int i : diag_D_inv.locally_owned_elements()) //the index set owned by the current processor
       {
-        double temp = F->diag_element(i);
-        diag_D_inv[i] = 1.0 / temp;
-        neg_diag_D_inv[i] = -1.0/temp;
+        const double d = F->diag_element(i);
+        diag_D_inv[i] = 1.0 / d;
+        neg_diag_D_inv[i] = -1.0/d;
       }
 
-      //- Stilde = B*(- D^-1)*Bt approximated schur component
-      B->mmult(neg_S_tilde, *B_T, neg_diag_D_inv); //mmult mult matrix matrix
+      // Stilde = B_incomp*(D^-1)*Bt approximated schur component POS DEFINITE
+      B->mmult(S_tilde, *B_T, neg_diag_D_inv); //mmult mult matrix matrix
+      //S tilde = B_stored *diag(neg_diag_D_inv) * BT = (-B_incomp)*diag(-D^-1)*BT =  B_incomp *D^-1 *BT 
 
       //preconditioners initialization
       preconditioner_F.initialize(*F);
-      preconditioner_S.initialize(neg_S_tilde);
+      preconditioner_S.initialize(S_tilde);
     }
 
-    // Application of the preconditioner.
+    // Application of the preconditioner. dst = P^-1 src
     //vmult = matrix vector mult
     void
     vmult(TrilinosWrappers::MPI::BlockVector       &dst, 
           const TrilinosWrappers::MPI::BlockVector &src) const
     {
-      SolverControl solver_F(10000 /*maxiter*/, /*tol**/ 1e-2*src.block(0).l2_norm());
+      //SOLVE F utilde = f_src
+      TrilinosWrappers::MPI::Vector y1_u;
+      y1_u.reinit(src.block(0)); //initial guess = 0
 
-      SolverGMRES<TrilinosWrappers::MPI::Vector> solver_gmres(solver_F);
+      {
+        SolverControl solver_F(10000 /*maxiter*/, /*tol**/ 1e-2*src.block(0).l2_norm());
+        SolverGMRES<TrilinosWrappers::MPI::Vector> solver_gmres(solver_F);
+        solver_gmres.solve(*F, y1_u, src.block(0), preconditioner_F);
+      }
 
-      //block lower triangular system
+      
+      //SOLVE Stilde ptilde = -(g_src + B_stored * utilde)
+      //full lower-triangular equation
+      // (-B_incomp) *utilde + (-Stilde) * ptilde = g_src
+      
+      TrilinosWrappers::MPI::Vector rhs_p;
+      rhs_p.reinit(src.block(1));
+      B->vmult(rhs_p, y1_u); //rhs_p = B_stored * y1_u (è = utilde)
+      rhs_p -= src.block(1); //rhs_p = B_stored * utilde -g_src
 
-      //store temporary results:
-      TrilinosWrappers::MPI::Vector y1_u = src.block(0); //u tilde = f
-      TrilinosWrappers::MPI::Vector y1_p = src.block(1); //p tilde = g,
+      TrilinosWrappers::MPI::Vector y1_p;
+      y1_p.reinit(src.block(1)); //zero initial guess
 
-      TrilinosWrappers::MPI::Vector temp_1 = src.block(1); //
+      //solve S_tilde * y1_p = rhs_p
+      {
+        SolverControl solver_S(10000, 1e-2*rhs_p.l2_norm());
+        SolverCG<TrilinosWrappers::MPI::Vector> solver_cg(solver_S);
+        solver_cg.solve(S_tilde, y1_p, rhs_p, preconditioner_S);
+      }
 
-      solver_gmres.solve(*F, y1_u, src.block(0), preconditioner_F);
-
-      B->vmult(temp_1, y1_u); //temp1=B y1_u
-      temp_1 -= src.block(1);  //temp = B y1_u - g
-
-      //solve -S_tilde * y1_p = temp_1
-      SolverControl solver_S(10000, 1e-2*temp_1.l2_norm());
-      SolverCG<TrilinosWrappers::MPI::Vector> solver_cg(solver_S);
-
-      solver_cg.solve(neg_S_tilde, y1_p, temp_1, preconditioner_S);
-
-      //solve the correction system. upper triangular
+      
+      //SOLVE the correction system. upper triangular
       dst.block(1) = y1_p; //p_tilde
       dst.block(1) *= 1. / alpha; //introducting relaxation parameter
+                                  //p_out = p_tilde /alpha
 
       //velocity correction
       //dst(0) = y1_u -inv(D)Bt dst(1)
-      dst.block(0) = y1_u; //u^n+1 =u_tilde
-      TrilinosWrappers::MPI::Vector tmp = src.block(0); //to have same dim as y1_u, initialization
-      B_T->vmult(tmp, dst.block(1)); //tmp = Bt*p^n+1
-      tmp.scale(diag_D_inv); //tmp= inv(D)*tmp 
-      dst.block(0) -= tmp; //u^n+1= u_tilde -tmp
+      //dst.block(0) = y1_u; //u^n+1 =u_tilde
+      TrilinosWrappers::MPI::Vector correction; //to have same dim as y1_u, initialization
+      correction.reinit(src.block(0));
+      B_T->vmult(correction, dst.block(1)); //tmp = Bt*p^n+1 (=p_out)
+      correction.scale(diag_D_inv); //correction = D^-1 BT p_out
+
+      dst.block(0) = y1_u; 
+      dst.block(0) -= correction;  //u^n+1= u_tilde -tmp
 
     }
 
   protected:
-    const double alpha = 0.5;
+    const double alpha = 0.5; //standard is 1.0
     // block matrix
-    const TrilinosWrappers::SparseMatrix *F;
-    const TrilinosWrappers::SparseMatrix *B_T;
-    const TrilinosWrappers::SparseMatrix *B;
+    const TrilinosWrappers::SparseMatrix *F = nullptr ;
+    const TrilinosWrappers::SparseMatrix *B_T = nullptr;
+    const TrilinosWrappers::SparseMatrix *B = nullptr;
 
-    TrilinosWrappers::SparseMatrix neg_S_tilde;
+    TrilinosWrappers::SparseMatrix S_tilde;
     TrilinosWrappers::MPI::Vector diag_D_inv;
     TrilinosWrappers::MPI::Vector neg_diag_D_inv;
 

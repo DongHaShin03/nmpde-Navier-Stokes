@@ -216,6 +216,7 @@ void NavierStokes<dim>::assemble()
     FEFaceValues<dim> fe_values_boundary(*fe,
                                          *quadrature_boundary,
                                          update_values | update_normal_vectors |
+                                         update_quadrature_points |
                                            update_JxW_values);
 
     
@@ -334,12 +335,14 @@ void NavierStokes<dim>::assemble()
                       boundary_function->value(fe_values_boundary.quadrature_point(q));
                     for (unsigned int i = 0; i < dofs_per_cell; ++i)
                     {
-                        cell_rhs(i) +=
+                        cell_rhs(i) -= //REFACTOR: bc g = −p_out from weak formulation!! if outlet_pressure != 0 problem
                           h_loc *
                           scalar_product(fe_values_boundary.normal_vector(q),
                                          fe_values_boundary[velocity].value(i, q)) *
                           fe_values_boundary.JxW(q);
                     }
+                    //∫_Ω ν ∇u : ∇v - p div(v) = ∫_Ω f·v + ∫_Γ_N (ν ∇u - pI)n · v 
+                    //h_loc is the outlet of outlet pressure p_out, RHS = -p_out (n · phi_i)
                 }
             }
         }
