@@ -52,7 +52,7 @@ class NavierStokes
           const double       &nu_,
           const std::function<Tensor<1, dim>(const Point<dim> &, const double &)> &f_,
           const double       &T_,
-          const double       &theta_,
+          const double       &theta_,  //unused
           const double       &delta_t_);
 
         virtual ~NavierStokes() = default;
@@ -76,7 +76,8 @@ class NavierStokes
         virtual std::string output_folder() const = 0;
 
         void setup();
-        void assemble();
+        void assemble_static();
+        void assemble_timestep();
         void solve();
         void output();
 
@@ -87,15 +88,17 @@ class NavierStokes
         const std::function<Tensor<1, dim>(const Point<dim> &, const double &)> f;
 
         const double T;
-        const double theta;
         const double delta_t;
+        const double theta;
         unsigned int timestep_number = 0;
         double time = 0.0;
 
+        // MPI / MESH
         const unsigned int mpi_size;
         const unsigned int mpi_rank;
         parallel::fullydistributed::Triangulation<dim> mesh;
 
+        //FE
         std::unique_ptr<FiniteElement<dim>> fe;
         std::unique_ptr<Quadrature<dim>> quadrature;
         std::unique_ptr<Quadrature<dim - 1>> quadrature_boundary;
@@ -106,26 +109,33 @@ class NavierStokes
         IndexSet locally_relevant_dofs;
         std::vector<IndexSet> block_relevant_dofs;
 
+        //MATRICES
+        TrilinosWrappers::BlockSparseMatrix static_matrix;
+        TrilinosWrappers::BlockSparseMatrix convection_matrix;
         TrilinosWrappers::BlockSparseMatrix system_matrix;
         TrilinosWrappers::BlockSparseMatrix pressure_mass;
+
         TrilinosWrappers::MPI::BlockVector system_rhs;
 
         TrilinosWrappers::MPI::BlockVector solution_owned;
         TrilinosWrappers::MPI::BlockVector solution;
         TrilinosWrappers::MPI::BlockVector old_solution;
-        TrilinosWrappers::MPI::BlockVector linearization_point;
 
         std::vector<std::pair<double, std::string>> times_and_names;
 
-        unsigned int nonlinear_max_iterations = 4;
-        double nonlinear_tolerance = 1e-6;
         unsigned int gmres_restart_length = 200;
         double pressure_regularization = 1e-8;
         unsigned int linear_max_iterations = 100000;
         double linear_relative_tolerance = 1e-2;
         double linear_absolute_tolerance = 1e-12;
 
+        //unused
+        unsigned int nonlinear_max_iterations = 4;
+        double nonlinear_tolerance = 1e-6;
+
         ConditionalOStream pcout;
+    private:
+        bool static_matrix_built = false;
 };
 
 extern template class NavierStokes<2>;
