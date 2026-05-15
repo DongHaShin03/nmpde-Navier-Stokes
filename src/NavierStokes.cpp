@@ -1,5 +1,5 @@
 #include "NavierStokes.hpp"
-#include "preconditioners/preconditioner.hpp"
+#include "preconditioners/PreconditionerFactory.hpp"
 
 #include <algorithm>
 #include <filesystem>
@@ -42,6 +42,15 @@ void NavierStokes<dim>::set_nonlinear_solver_parameters(
 }
 
 template <int dim>
+void NavierStokes<dim>::set_nonlinear_solver_strategy(
+  const NonlinearMethod method,
+  const double          relaxation)
+{
+    nonlinear_method = method;
+    picard_relaxation = std::min(1.0, std::max(0.0, relaxation));
+}
+
+template <int dim>
 void NavierStokes<dim>::set_linear_solver_parameters(
   const unsigned int gmres_restart_length_,
   const double       pressure_regularization_,
@@ -57,6 +66,20 @@ void NavierStokes<dim>::set_linear_solver_parameters(
 }
 
 template <int dim>
+void NavierStokes<dim>::set_preconditioner(
+  const PreconditionerKind preconditioner_kind_)
+{
+    preconditioner_kind = preconditioner_kind_;
+}
+
+template <int dim>
+void NavierStokes<dim>::set_stabilization_options(
+  const StabilizationOptions &options)
+{
+    stabilization_options = options;
+}
+
+template <int dim>
 void NavierStokes<dim>::setup()
 {
     {
@@ -65,11 +88,13 @@ void NavierStokes<dim>::setup()
         Triangulation<dim> mesh_serial;
 
         GridIn<dim> grid_in;
+        // Read serially and then partitioned to all MPI processes ( -- TODO parallel reading?)
         grid_in.attach_triangulation(mesh_serial);
 
         std::ifstream mesh_file(mesh_file_name);
         grid_in.read_msh(mesh_file);
 
+        // Partition of the mesh depending on the MPI ranks
         GridTools::partition_triangulation(mpi_size, mesh_serial);
         const auto construction_data =
           TriangulationDescription::Utilities::create_description_from_triangulation(
@@ -147,22 +172,27 @@ void NavierStokes<dim>::setup()
 
         pcout << "  Initializing the sparsity pattern" << std::endl;
 
+        // In this case is a 3x3 matrix, which indicates which components can be coupled in the matrix (like a mask)
+        // Should be p-p = 0
         Table<2, DoFTools::Coupling> coupling(dim + 1, dim + 1);
         for (unsigned int c = 0; c < dim + 1; ++c)
         {
             for (unsigned int d = 0; d < dim + 1; ++d)
             {
                 if (c == dim && d == dim)
-                    coupling[c][d] =
-                      (pressure_regularization > 0.0 ? DoFTools::always :
-                                                       DoFTools::none);
+                    coupling[c][d] = DoFTools::none;
                 else
                     coupling[c][d] = DoFTools::always;
             }
         }
 
+        // We create a block sparsity pattern
         TrilinosWrappers::BlockSparsityPattern sparsity(block_owned_dofs,
                                                         MPI_COMM_WORLD);
+
+        // See the mesh, the FE and coupling table
+        // For every cell, if they are in the same cell, and their components are in the coupling table,
+        // it puts a possible entry in the patterm
         DoFTools::make_sparsity_pattern(dof_handler, coupling, sparsity);
         sparsity.compress();
 
@@ -187,6 +217,9 @@ void NavierStokes<dim>::setup()
         sparsity_pressure_mass.compress();
 
         pcout << "  Initializing the matrices" << std::endl;
+        // Initialize the matrix with sparsity
+        // This is usefull to construct matrices with the same sparsity constructed with the
+        // coupling matrices
         static_matrix.reinit(sparsity);
         convection_matrix.reinit(sparsity);
         system_matrix.reinit(sparsity);
@@ -203,8 +236,13 @@ void NavierStokes<dim>::setup()
 }
 
 //assemble static parts indipendent from time
-//static_matrix = (1/dt) M  +  nu A  +  B^T  +  B  [+ regularization]
-//CALLED ONCE at first timestep. 
+//static_matrix = (1/dt) M  +  nu A  +  B^T  +  B
+//CALLED ONCE at first timestep.
+//
+// ----- QUI THETA-METHOD: PARTE STATICA -----
+// Implementare la separazione tra termini impliciti theta*F(u^{n+1}) e
+// termini espliciti (1-theta)*F(u^n). Dopo l'implementazione, verificare che
+// theta=1 riproduca Backward Euler e theta=0.5 dia Crank-Nicolson sui test 2D.
 template <int dim>
 void NavierStokes<dim>::assemble_static()
 {
@@ -262,6 +300,11 @@ void NavierStokes<dim>::assemble_static()
                       //(1.0 / delta_t) * scalar_product(phi_vel_j, phi_vel_i) *
                       (1.0 / delta_t) * (phi_vel_j * phi_vel_i) *
                       fe_values.JxW(q);
+
+                    // ----- QUI THETA-METHOD: DIFFUSIONE IMPLICITA -----
+                    // Quando theta verra' usato davvero, la parte viscosa
+                    // implicita deve essere scalata con theta e la parte
+                    // esplicita corrispondente deve andare nel RHS.
                     // implicit viscous term
                     cell_static(i, j) += nu * scalar_product(grad_phi_vel_j, grad_phi_vel_i) *
                       fe_values.JxW(q);
@@ -270,9 +313,21 @@ void NavierStokes<dim>::assemble_static()
                     cell_static(i, j) -= psi_j * div_phi_vel_i * fe_values.JxW(q);
                     cell_static(i, j) += psi_i * div_phi_vel_j * fe_values.JxW(q);
 
-                    //pressure stabilizer pure Dirichlet
-                    cell_static(i,j) += pressure_regularization * psi_i * psi_j *fe_values.JxW(q);
+                    // ----- QUI GRAD-DIV -----
+                    // Il termine e' agganciato al .prm; completare validazione,
+                    // scelta di gamma e report della norma div(u). Dopo averlo
+                    // implementato/tunato, confrontare gamma=0.1,1,10 su Re 20/100.
+                    if (stabilization_options.grad_div &&
+                        stabilization_options.gamma_grad_div > 0.0)
+                        cell_static(i, j) +=
+                          stabilization_options.gamma_grad_div *
+                          div_phi_vel_j * div_phi_vel_i *
+                          fe_values.JxW(q);
 
+                    // ----- QUI MATRICI PER PRECONDIZIONATORI AVANZATI -----
+                    // Separare in modo esplicito M_p, M_u, K_p e F_p invece di
+                    // riusare solo pressure_mass. Dopo questo passo PCD puo'
+                    // ricevere operatori coerenti da RequiredMatrices.
                     //pressure mass matrix
                     cell_pressure_mass(i, j) +=
                       psi_i * psi_j *  (1.0/ nu) * fe_values.JxW(q);
@@ -293,11 +348,15 @@ void NavierStokes<dim>::assemble_static()
 }
 
 
-//BUILDS AT EVERY TIMESTEP: 
+//BUILDS AT EVERY TIMESTEP:
 //1. convection_matrix (with temam stabilization) =C(u_n)
 //2. system_rhs = 1/dt M u_n + f(t_n+1) + Neumann terms
 //3. system_matrix = static matrix + convection matrix
 //apply dirichlet boundary conditions
+//
+// ----- QUI THETA-METHOD: PARTE DI TIME STEP -----
+// Aggiungere al RHS i contributi espliciti (1-theta)*F(u^n). Dopo averlo fatto,
+// i run con theta=1,0.6,0.5 devono differire solo per lo schema temporale scelto.
 
 template <int dim>
 void NavierStokes<dim>::assemble_timestep()
@@ -330,6 +389,10 @@ void NavierStokes<dim>::assemble_timestep()
     FEValuesExtractors::Vector velocity(0);
     FEValuesExtractors::Scalar pressure(dim);
 
+    // ----- QUI LINEARIZZAZIONE PICARD/NEWTON -----
+    // Oggi la convezione usa old_solution. Per Picard usare una soluzione di
+    // linearizzazione u^k; per Newton assemblare Jacobiano e residuo coerenti.
+    // Dopo l'implementazione, salvare iterazioni non lineari e residuo finale.
     //values from old sol (u_n) evaluated at quadrature points
     std::vector<Tensor<1, dim>> previous_velocity_values(n_q);
     std::vector<double> previous_velocity_div(n_q);
@@ -367,20 +430,46 @@ void NavierStokes<dim>::assemble_timestep()
                     const Tensor<1, dim> phi_vel_j = fe_values[velocity].value(j, q);
                     const Tensor<2, dim> grad_phi_vel_j = fe_values[velocity].gradient(j, q);
                     
+                    // ----- QUI CONVEZIONE IMPLICITA/PICARD/NEWTON -----
+                    // Sostituire u_old con la velocita' di linearizzazione
+                    // corretta. Per Newton aggiungere i termini derivati della
+                    // convezione. Dopo il cambio, Re 100 deve convergere con Picard.
                     //convection term
                     cell_matrix(i, j) += scalar_product(grad_phi_vel_j * u_old, phi_vel_i) *
                        fe_values.JxW(q);
+
+                    // ----- QUI TEMAM -----
+                    // Il termine e' gia' configurabile. Dopo ogni refactor di
+                    // convezione, verificare che Temam resti consistente con la
+                    // stessa velocita' di linearizzazione usata nel termine convettivo.
                     // stabilization term
-                    cell_matrix(i, j) += 0.5 * u_old_div * scalar_product(phi_vel_j, phi_vel_i) *
-                      fe_values.JxW(q);
+                    if (stabilization_options.temam)
+                        cell_matrix(i, j) +=
+                          0.5 * u_old_div *
+                          scalar_product(phi_vel_j, phi_vel_i) *
+                          fe_values.JxW(q);
+
+                    // ----- QUI SUPG / PSPG -----
+                    // Assemblare i termini elemento-per-elemento con tau_K e
+                    // residuo di momento. Dopo l'implementazione, abilitarli da
+                    // .prm solo per Re >= 100 e confrontare oscillazioni drag/lift.
                 }
 
+                // ----- QUI RHS THETA / RESIDUO NON LINEARE -----
+                // Quando theta, Picard o Newton saranno completi, il RHS dovra'
+                // contenere anche i contributi espliciti e/o il residuo del
+                // problema non lineare. Dopo il cambio, controllare conservazione
+                // di massa e residuo non lineare a ogni time step.
                 cell_rhs(i) += 1.0 / delta_t * scalar_product(u_old, phi_vel_i)  * fe_values.JxW(q);
                 //forcing term
                 cell_rhs(i) += scalar_product(f_loc, phi_vel_i) * fe_values.JxW(q);
             }
         }
 
+        // ----- QUI BC OUTFLOW / PRESSIONE -----
+        // Rendere robusto il trattamento dell'outlet pressure non nullo e
+        // documentare il segno. Dopo il cambio, validare Delta p sui punti
+        // benchmark davanti/dietro il cilindro.
         // Border condition --- Neumann outflow
         if (cell->at_boundary())
         {
@@ -424,6 +513,9 @@ void NavierStokes<dim>::assemble_timestep()
     convection_matrix.compress(VectorOperation::add);
     system_rhs.compress(VectorOperation::add);
 
+    // ----- QUI COMPOSIZIONE SISTEMA THETA -----
+    // Quando theta sara' implementato, comporre system_matrix con i coefficienti
+    // corretti: massa sempre 1/dt, termini impliciti scalati da theta.
     //now compose the 2
     system_matrix.copy_from(static_matrix);
     system_matrix.add(1.0, convection_matrix);
@@ -472,15 +564,26 @@ void NavierStokes<dim>::solve()
     //initial guess: sol from previous timestep
     solution_owned = solution;
 
-    // Baseline for the preconditioner ----- #TODO
-    //PreconditionIdentity preconditioner;
-    //PreconditionerSIMPLE preconditioner;
-    preconditionerYosida preconditioner;
-    preconditioner.initialize(system_matrix.block(0, 0), system_matrix.block(1, 0), system_matrix.block(0, 1), solution_owned);
+    // ----- QUI MATRICES PACK PER PRECONDIZIONATORI -----
+    // Ogni nuovo precondizionatore deve ricevere solo cio' che serve tramite
+    // RequiredMatrices. Dopo aver aggiunto una matrice nuova, valorizzarla qui
+    // senza cambiare la firma pubblica dei precondizionatori.
+    RequiredMatrices required_matrices;
+    required_matrices.velocity_stiffness = &system_matrix.block(0, 0);
+    required_matrices.pressure_mass = &pressure_mass.block(1, 1);
+    required_matrices.B = &system_matrix.block(1, 0);
+    required_matrices.BT = &system_matrix.block(0, 1);
+    required_matrices.solution_template = &solution_owned;
 
+    auto preconditioner = make_preconditioner(preconditioner_kind);
+    preconditioner->initialize(required_matrices);
 
-    solver.solve(system_matrix, solution_owned, system_rhs, preconditioner);
+    solver.solve(system_matrix, solution_owned, system_rhs, *preconditioner);
 
+    // ----- QUI METRICHE SOLVER LINEARE -----
+    // Salvare last_step(), convergenza/fallimenti e tempo del solve in una
+    // struttura condivisa o CSV. Dopo l'implementazione, ogni riga benchmark
+    // deve riportare iterazioni GMRES e tempo per time step.
     pcout << "  " << solver_control.last_step() << " GMRES iterations"
           << std::endl;
 }
@@ -548,15 +651,37 @@ void NavierStokes<dim>::run()
 
     pcout << "===============================================" << std::endl;
     pcout << "   Running " << simulation_name() << std::endl;
-    pcout << "   Scheme: semi-implicit (no Picard), Temam stabilization" << std::endl;
+    pcout << "   Scheme: semi-implicit, nonlinear method = "
+          << to_string(nonlinear_method)
+          << ", Picard relaxation = " << picard_relaxation << std::endl;
     pcout << "   T_final = " << T << ", dt = " << delta_t << std::endl;
-    pcout << "   GMRES restart = " << gmres_restart_length
-          << ", pressure regularization = " << pressure_regularization
+    pcout << "   GMRES restart = " << gmres_restart_length << std::endl;
+    pcout << "   Pressure block regularization = disabled"
+          << " (parsed value " << pressure_regularization << " is ignored)"
+          << std::endl;
+    pcout << "   Preconditioner = " << to_string(preconditioner_kind)
+          << std::endl;
+    pcout << "   Stabilization: Temam = "
+          << (stabilization_options.temam ? "on" : "off")
+          << ", grad-div = "
+          << (stabilization_options.grad_div ? "on" : "off")
+          << " (gamma = " << stabilization_options.gamma_grad_div << ")"
+          << ", SUPG = " << (stabilization_options.supg ? "on" : "off")
+          << ", PSPG = " << (stabilization_options.pspg ? "on" : "off")
           << std::endl;
     pcout << "   Linear max iters = " << linear_max_iterations
           << ", rel tol = " << linear_relative_tolerance
           << ", abs tol = " << linear_absolute_tolerance << std::endl;
     pcout << "===============================================" << std::endl;
+
+    if (nonlinear_method != NonlinearMethod::None)
+        pcout << "   Warning: nonlinear strategies are parsed but the nonlinear "
+                 "iteration loop is not implemented yet."
+              << std::endl;
+    if (stabilization_options.supg || stabilization_options.pspg)
+        pcout << "   Warning: SUPG/PSPG options are parsed but their assembly is "
+                 "not implemented yet."
+              << std::endl;
 
     setup();
 
@@ -577,6 +702,10 @@ void NavierStokes<dim>::run()
 
     output(); //write t=0
 
+    // ----- QUI LOOP NON LINEARE PICARD / NEWTON / NEWTON DAMPED -----
+    // Sostituire la singola chiamata assemble_timestep()+solve() con un loop su
+    // nonlinear_method. Dopo l'implementazione, il .prm deve poter selezionare
+    // none, picard, picard_relaxed, newton e newton_damped senza cambiare codice.
     //time loop
     while (time < T - 0.5 * delta_t)
     {
@@ -593,6 +722,10 @@ void NavierStokes<dim>::run()
 
         old_solution = solution;
 
+        // ----- QUI TIMING TIME STEP -----
+        // Misurare separatamente assemble_timestep(), solve(), compute_forces()
+        // e output(). Dopo l'implementazione, salvare tempo/step e tempo totale
+        // nelle metriche benchmark.
         assemble_timestep();
 
         solve();

@@ -87,12 +87,28 @@ void NavierStokes2D::compute_forces()
     const double C_D = total_force_x / denominator;
     const double C_L = total_force_y / denominator;
 
+    // ----- QUI PRESSIONE DELTA P -----
+    // Calcolare p_front - p_back nei punti benchmark davanti/dietro il cilindro.
+    // Dopo l'implementazione, salvare Delta p insieme a Cd/Cl a ogni time step.
+
+    // ----- QUI NORMA DIVERGENZA -----
+    // Calcolare ||div(u_h)||_L2 come metrica di incomprimibilita'. Dopo il cambio,
+    // usarla per confrontare grad-div disattivo e gamma_grad_div diversi.
+
+    // ----- QUI STROUHAL / FREQUENZA LIFT -----
+    // Per run instazionari, post-processare Cl(t) per stimare frequenza e St.
+    // Dopo l'implementazione, produrre il valore medio su una finestra periodica.
+
     if (this->mpi_rank == 0)
     {
         this->pcout << "   Step " << this->timestep_number << " Forces: Drag="
                     << total_force_x << ", Lift=" << total_force_y << std::endl;
         this->pcout << "   Coeffs: Cd=" << C_D << ", Cl=" << C_L << std::endl;
 
+        // ----- QUI OUTPUT CSV METRICHE -----
+        // Sostituire/affiancare coefficients.txt con un CSV con header:
+        // time,Cd,Cl,DeltaP,divL2,gmres_iters,nonlinear_iters,step_time.
+        // Dopo il cambio, ogni benchmark deve essere confrontabile con script.
         std::ofstream file("coefficients.txt", std::ios::app);
         file << this->time << " " << C_D << " " << C_L << std::endl;
     }

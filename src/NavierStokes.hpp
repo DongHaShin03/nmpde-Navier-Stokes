@@ -29,6 +29,8 @@
 #include <deal.II/numerics/matrix_tools.h>
 #include <deal.II/numerics/vector_tools.h>
 
+#include "NavierStokesOptions.hpp"
+
 #include <fstream>
 #include <functional>
 #include <iostream>
@@ -60,11 +62,15 @@ class NavierStokes
         void run();
         void set_nonlinear_solver_parameters(const unsigned int max_iterations,
                                              const double       tolerance);
+        void set_nonlinear_solver_strategy(const NonlinearMethod method,
+                                           const double          relaxation);
         void set_linear_solver_parameters(const unsigned int gmres_restart_length_,
                                           const double       pressure_regularization_,
                                           const unsigned int linear_max_iterations_,
                                           const double       linear_relative_tolerance_,
                                           const double       linear_absolute_tolerance_);
+        void set_preconditioner(const PreconditionerKind preconditioner_kind_);
+        void set_stabilization_options(const StabilizationOptions &options);
 
         std::unique_ptr<Function<dim>> initial_condition;
         std::map<types::boundary_id, const Function<dim> *> dirichlet;
@@ -132,6 +138,11 @@ class NavierStokes
         //unused
         unsigned int nonlinear_max_iterations = 4;
         double nonlinear_tolerance = 1e-6;
+        NonlinearMethod nonlinear_method = NonlinearMethod::None;
+        double picard_relaxation = 1.0;
+
+        PreconditionerKind preconditioner_kind = PreconditionerKind::Yosida;
+        StabilizationOptions stabilization_options;
 
         ConditionalOStream pcout;
     private:

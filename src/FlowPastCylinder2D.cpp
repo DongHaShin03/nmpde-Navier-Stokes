@@ -3,6 +3,10 @@
 void FlowPastCylinder2DParameters::declare_parameters(ParameterHandler &prm)
 {
     prm.enter_subsection("Mesh and discretization");
+    // ----- QUI CONFIG CASI BENCHMARK -----
+    // Creare file .prm separati per Re 20, Re 100 e Re 200 invece di cambiare
+    // questi default. Dopo averli creati, ogni run deve essere riproducibile
+    // solo passando il file .prm da riga di comando.
     prm.declare_entry("Mesh file",
                       "../mesh/ns-mesh2D-level1.msh",
                       Patterns::Anything());
@@ -14,22 +18,56 @@ void FlowPastCylinder2DParameters::declare_parameters(ParameterHandler &prm)
     prm.leave_subsection();
 
     prm.enter_subsection("Solver");
+    // ----- QUI CONFIG SOLVER NON LINEARE -----
+    // Le opzioni sono gia' parsate. Dopo l'implementazione in NavierStokes.cpp,
+    // verificare che picard, picard_relaxed, newton e newton_damped cambino
+    // davvero il loop non lineare e producano metriche confrontabili.
+    prm.declare_entry("Nonlinear method",
+                      "none",
+                      Patterns::Selection(
+                        "none|picard|picard_relaxed|newton|newton_damped"));
     prm.declare_entry("Nonlinear iterations", "8", Patterns::Integer(1));
     prm.declare_entry("Nonlinear tolerance", "1e-6", Patterns::Double(0.0));
+    prm.declare_entry("Picard relaxation", "1.0", Patterns::Double(0.0, 1.0));
     prm.declare_entry("GMRES restart length", "800", Patterns::Integer(1));
-    prm.declare_entry("Pressure regularization", "1e-4", Patterns::Double(0.0));
+    // Kept for backward-compatible .prm files; the saddle-point p-p block is
+    // not regularized in the assembled Navier-Stokes system.
+    prm.declare_entry("Pressure regularization", "0.0", Patterns::Double(0.0));
     prm.declare_entry("Linear max iterations", "100000", Patterns::Integer(1));
     prm.declare_entry("Linear relative tolerance", "5e-2", Patterns::Double(0.0));
     prm.declare_entry("Linear absolute tolerance", "2e-2", Patterns::Double(0.0));
+    prm.declare_entry("Preconditioner",
+                      "yosida",
+                      Patterns::Selection(
+                        "identity|simple|block_diagonal|block_triangular|yosida|pcd"));
+    prm.leave_subsection();
+
+    prm.enter_subsection("Stabilization");
+    // ----- QUI CONFIG STABILIZZAZIONI -----
+    // Questi flag devono controllare l'assemblaggio reale di Temam, grad-div,
+    // SUPG e PSPG. Dopo l'implementazione, le stabilizzazioni devono poter
+    // essere accese/spente senza ricompilare.
+    prm.declare_entry("Temam", "true", Patterns::Bool());
+    prm.declare_entry("Grad-div", "false", Patterns::Bool());
+    prm.declare_entry("Grad-div coefficient", "0.0", Patterns::Double(0.0));
+    prm.declare_entry("SUPG", "false", Patterns::Bool());
+    prm.declare_entry("PSPG", "false", Patterns::Bool());
     prm.leave_subsection();
 
     prm.enter_subsection("Physics");
+    // ----- QUI REYNOLDS / VISCOSITA -----
+    // Decidere una convenzione unica: impostare nu direttamente oppure calcolarla
+    // da Re, velocita' e lunghezza di riferimento. Dopo il cambio, i .prm devono
+    // dichiarare chiaramente Re e nu usati nel benchmark.
     prm.declare_entry("Viscosity", "0.5", Patterns::Double(0.0));
     prm.declare_entry("Inlet velocity", "0.05", Patterns::Double(0.0));
     prm.declare_entry("Outlet pressure", "0.0", Patterns::Double());
     prm.leave_subsection();
 
     prm.enter_subsection("Force coefficients");
+    // ----- QUI NORMALIZZAZIONE DRAG/LIFT -----
+    // Validare U_ref e L_ref contro il benchmark Schaefer-Turek. Dopo il cambio,
+    // coefficients.csv deve indicare la normalizzazione usata.
     prm.declare_entry("Reference velocity", "0.05", Patterns::Double(0.0));
     prm.declare_entry("Reference length", "25.0", Patterns::Double(0.0));
     prm.leave_subsection();
@@ -54,9 +92,11 @@ void FlowPastCylinder2DParameters::parse_parameters(ParameterHandler &prm)
     prm.leave_subsection();
 
     prm.enter_subsection("Solver");
+    nonlinear_method = parse_nonlinear_method(prm.get("Nonlinear method"));
     nonlinear_max_iterations =
       static_cast<unsigned int>(prm.get_integer("Nonlinear iterations"));
     nonlinear_tolerance = prm.get_double("Nonlinear tolerance");
+    picard_relaxation = prm.get_double("Picard relaxation");
     gmres_restart_length =
       static_cast<unsigned int>(prm.get_integer("GMRES restart length"));
     pressure_regularization = prm.get_double("Pressure regularization");
@@ -64,6 +104,15 @@ void FlowPastCylinder2DParameters::parse_parameters(ParameterHandler &prm)
       static_cast<unsigned int>(prm.get_integer("Linear max iterations"));
     linear_relative_tolerance = prm.get_double("Linear relative tolerance");
     linear_absolute_tolerance = prm.get_double("Linear absolute tolerance");
+    preconditioner = parse_preconditioner_kind(prm.get("Preconditioner"));
+    prm.leave_subsection();
+
+    prm.enter_subsection("Stabilization");
+    stabilization.temam = prm.get_bool("Temam");
+    stabilization.grad_div = prm.get_bool("Grad-div");
+    stabilization.gamma_grad_div = prm.get_double("Grad-div coefficient");
+    stabilization.supg = prm.get_bool("SUPG");
+    stabilization.pspg = prm.get_bool("PSPG");
     prm.leave_subsection();
 
     prm.enter_subsection("Physics");

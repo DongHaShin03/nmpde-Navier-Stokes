@@ -16,13 +16,19 @@ struct FlowPastCylinder2DParameters
     double theta = 1.0;
     double delta_t = 0.0025;
 
+    NonlinearMethod nonlinear_method = NonlinearMethod::None;
     unsigned int nonlinear_max_iterations = 8;
     double nonlinear_tolerance = 1e-6;
+    double picard_relaxation = 1.0;
+
     unsigned int gmres_restart_length = 800;
-    double pressure_regularization = 1e-4;
+    double pressure_regularization = 0.0;
     unsigned int linear_max_iterations = 100000;
     double linear_relative_tolerance = 5e-2;
     double linear_absolute_tolerance = 2e-2;
+    PreconditionerKind preconditioner = PreconditionerKind::Yosida;
+
+    StabilizationOptions stabilization;
 
     double inlet_velocity = 0.05;
     double outlet_pressure = 0.0;

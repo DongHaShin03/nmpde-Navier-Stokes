@@ -2,6 +2,10 @@
 
 void NavierStokes3D::compute_forces()
 {
+    // ----- QUI METRICHE 3D -----
+    // Implementare drag/lift/side-force e, se serve, Delta p 3D usando la stessa
+    // convenzione del caso 2D. Dopo l'implementazione, il caso Re 20 3D deve
+    // produrre un CSV compatibile con quello 2D.
     // #TODO
 }
 
