@@ -22,8 +22,8 @@ end
 
 subsection Stabilization
   set Temam = true
-  set Grad-div = false
-  set Grad-div coefficient = 0.0
+  set Grad-div = true
+  set Grad-div coefficient = 1.0
   set SUPG = false
   set PSPG = false
 end

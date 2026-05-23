@@ -54,7 +54,7 @@ class NavierStokes
           const double       &nu_,
           const std::function<Tensor<1, dim>(const Point<dim> &, const double &)> &f_,
           const double       &T_,
-          const double       &theta_,  //unused
+          const double       &theta_,
           const double       &delta_t_);
 
         virtual ~NavierStokes() = default;
@@ -83,7 +83,8 @@ class NavierStokes
 
         void setup();
         void assemble_static();
-        void assemble_timestep();
+        void assemble_timestep(
+          const TrilinosWrappers::MPI::BlockVector &beta_solution);
         void solve();
         void output();
 

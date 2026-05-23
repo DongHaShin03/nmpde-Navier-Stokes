@@ -23,8 +23,8 @@ NavierStokes<dim>::NavierStokes(const std::string  &mesh_file_name_,
   , nu(nu_)
   , f(f_)
   , T(T_)
-  , theta(theta_)
   , delta_t(delta_t_)
+  , theta(theta_)
   , mpi_size(Utilities::MPI::n_mpi_processes(MPI_COMM_WORLD))
   , mpi_rank(Utilities::MPI::this_mpi_process(MPI_COMM_WORLD))
   , mesh(MPI_COMM_WORLD)
@@ -88,7 +88,7 @@ void NavierStokes<dim>::setup()
         Triangulation<dim> mesh_serial;
 
         GridIn<dim> grid_in;
-        // Read serially and then partitioned to all MPI processes ( -- TODO parallel reading?)
+        // Read serially and then partitioned to all MPI processes
         grid_in.attach_triangulation(mesh_serial);
 
         std::ifstream mesh_file(mesh_file_name);
@@ -301,12 +301,8 @@ void NavierStokes<dim>::assemble_static()
                       (1.0 / delta_t) * (phi_vel_j * phi_vel_i) *
                       fe_values.JxW(q);
 
-                    // ----- QUI THETA-METHOD: DIFFUSIONE IMPLICITA -----
-                    // Quando theta verra' usato davvero, la parte viscosa
-                    // implicita deve essere scalata con theta e la parte
-                    // esplicita corrispondente deve andare nel RHS.
-                    // implicit viscous term
-                    cell_static(i, j) += nu * scalar_product(grad_phi_vel_j, grad_phi_vel_i) *
+                    // Implicit theta part of the viscous term
+                    cell_static(i, j) += theta * nu * scalar_product(grad_phi_vel_j, grad_phi_vel_i) *
                       fe_values.JxW(q);
 
                     //pressure-velocity coupling
@@ -359,7 +355,8 @@ void NavierStokes<dim>::assemble_static()
 // i run con theta=1,0.6,0.5 devono differire solo per lo schema temporale scelto.
 
 template <int dim>
-void NavierStokes<dim>::assemble_timestep()
+void NavierStokes<dim>::assemble_timestep(
+  const TrilinosWrappers::MPI::BlockVector &beta_solution)
 {
     pcout << "===============================================" << std::endl;
     pcout << "Assembling timestep" << std::endl;
@@ -389,17 +386,15 @@ void NavierStokes<dim>::assemble_timestep()
     FEValuesExtractors::Vector velocity(0);
     FEValuesExtractors::Scalar pressure(dim);
 
-    // ----- QUI LINEARIZZAZIONE PICARD/NEWTON -----
-    // Oggi la convezione usa old_solution. Per Picard usare una soluzione di
-    // linearizzazione u^k; per Newton assemblare Jacobiano e residuo coerenti.
-    // Dopo l'implementazione, salvare iterazioni non lineari e residuo finale.
-    //values from old sol (u_n) evaluated at quadrature points
+    // old_solution is u^n; beta_solution is the convective field beta.
+    // In the current Oseen mode beta_solution == old_solution.
     std::vector<Tensor<1, dim>> previous_velocity_values(n_q);
-    std::vector<double> previous_velocity_div(n_q);
-    //std::vector<Tensor<2, dim>> previous_velocity_grads(n_q);
-    //std::vector<Tensor<1, dim>> linearization_velocity_values(n_q);
+    std::vector<Tensor<2, dim>> previous_velocity_gradients(n_q);
+    std::vector<double> previous_velocity_divergences(n_q);
+    std::vector<Tensor<1, dim>> beta_velocity_values(n_q);
+    std::vector<double> beta_velocity_divergences(n_q);
 
-    //const double previous_time = time - delta_t;
+    const double previous_time = time - delta_t;
     for (const auto &cell : dof_handler.active_cell_iterators())
     {
         if (!cell->is_locally_owned())
@@ -410,19 +405,35 @@ void NavierStokes<dim>::assemble_timestep()
         cell_matrix = 0.0;
         cell_rhs = 0.0;
 
-        fe_values[velocity].get_function_values(old_solution, previous_velocity_values);
-        fe_values[velocity].get_function_divergences(old_solution, previous_velocity_div);
+        fe_values[velocity].get_function_values(old_solution,
+                                                previous_velocity_values);
+        fe_values[velocity].get_function_gradients(old_solution,
+                                                   previous_velocity_gradients);
+        fe_values[velocity].get_function_divergences(
+          old_solution, previous_velocity_divergences);
+        fe_values[velocity].get_function_values(beta_solution,
+                                                beta_velocity_values);
+        fe_values[velocity].get_function_divergences(
+          beta_solution, beta_velocity_divergences);
 
         for (unsigned int q = 0; q < n_q; ++q)
         {
             const Tensor<1, dim> u_old = previous_velocity_values[q];
-            const double u_old_div = previous_velocity_div[q];
+            const Tensor<2, dim> grad_u_old = previous_velocity_gradients[q];
+            const double div_u_old = previous_velocity_divergences[q];
+            const Tensor<1, dim> beta = beta_velocity_values[q];
+            const double div_beta = beta_velocity_divergences[q];
 
-            const Tensor<1, dim> f_loc = f(fe_values.quadrature_point(q), time);
+            const Tensor<1, dim> f_new_loc =
+              f(fe_values.quadrature_point(q), time);
+            const Tensor<1, dim> f_old_loc =
+              f(fe_values.quadrature_point(q), previous_time);
 
             for (unsigned int i = 0; i < dofs_per_cell; ++i)
             {
                 const Tensor<1, dim> phi_vel_i = fe_values[velocity].value(i, q);
+                const Tensor<2, dim> grad_phi_vel_i =
+                  fe_values[velocity].gradient(i, q);
 
                 //LHS contributions
                 for (unsigned int j = 0; j < dofs_per_cell; ++j)
@@ -430,22 +441,14 @@ void NavierStokes<dim>::assemble_timestep()
                     const Tensor<1, dim> phi_vel_j = fe_values[velocity].value(j, q);
                     const Tensor<2, dim> grad_phi_vel_j = fe_values[velocity].gradient(j, q);
                     
-                    // ----- QUI CONVEZIONE IMPLICITA/PICARD/NEWTON -----
-                    // Sostituire u_old con la velocita' di linearizzazione
-                    // corretta. Per Newton aggiungere i termini derivati della
-                    // convezione. Dopo il cambio, Re 100 deve convergere con Picard.
-                    //convection term
-                    cell_matrix(i, j) += scalar_product(grad_phi_vel_j * u_old, phi_vel_i) *
+                    // Implicit theta part of the Oseen/Picard convection.
+                    cell_matrix(i, j) += theta * scalar_product(grad_phi_vel_j * beta, phi_vel_i) *
                        fe_values.JxW(q);
 
-                    // ----- QUI TEMAM -----
-                    // Il termine e' gia' configurabile. Dopo ogni refactor di
-                    // convezione, verificare che Temam resti consistente con la
-                    // stessa velocita' di linearizzazione usata nel termine convettivo.
-                    // stabilization term
+                    // Temam stabilization uses the same beta as convection.
                     if (stabilization_options.temam)
                         cell_matrix(i, j) +=
-                          0.5 * u_old_div *
+                          theta * 0.5 * div_beta *
                           scalar_product(phi_vel_j, phi_vel_i) *
                           fe_values.JxW(q);
 
@@ -461,8 +464,28 @@ void NavierStokes<dim>::assemble_timestep()
                 // problema non lineare. Dopo il cambio, controllare conservazione
                 // di massa e residuo non lineare a ogni time step.
                 cell_rhs(i) += 1.0 / delta_t * scalar_product(u_old, phi_vel_i)  * fe_values.JxW(q);
-                //forcing term
-                cell_rhs(i) += scalar_product(f_loc, phi_vel_i) * fe_values.JxW(q);
+                Tensor<1, dim> theta_force;
+                for (unsigned int d = 0; d < dim; ++d)
+                    theta_force[d] =
+                      theta * f_new_loc[d] + (1.0 - theta) * f_old_loc[d];
+                cell_rhs(i) +=
+                  scalar_product(theta_force, phi_vel_i) *
+                  fe_values.JxW(q);
+
+                cell_rhs(i) -=
+                  (1.0 - theta) * nu *
+                  scalar_product(grad_u_old, grad_phi_vel_i) *
+                  fe_values.JxW(q);
+                cell_rhs(i) -=
+                  (1.0 - theta) *
+                  scalar_product(grad_u_old * u_old, phi_vel_i) *
+                  fe_values.JxW(q);
+
+                if (stabilization_options.temam)
+                    cell_rhs(i) -=
+                      (1.0 - theta) * 0.5 * div_u_old *
+                      scalar_product(u_old, phi_vel_i) *
+                      fe_values.JxW(q);
             }
         }
 
@@ -726,7 +749,7 @@ void NavierStokes<dim>::run()
         // Misurare separatamente assemble_timestep(), solve(), compute_forces()
         // e output(). Dopo l'implementazione, salvare tempo/step e tempo totale
         // nelle metriche benchmark.
-        assemble_timestep();
+        assemble_timestep(old_solution);
 
         solve();
 
