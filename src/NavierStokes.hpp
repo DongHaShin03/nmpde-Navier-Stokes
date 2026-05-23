@@ -147,6 +147,9 @@ class NavierStokes
 
         ConditionalOStream pcout;
     private:
+        double compute_supg_tau(const double beta_norm,
+                                const double h_K) const;
+
         bool static_matrix_built = false;
 };
 

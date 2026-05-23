@@ -2,6 +2,7 @@
 #include "preconditioners/PreconditionerFactory.hpp"
 
 #include <algorithm>
+#include <cmath>
 #include <filesystem>
 #include <iomanip>
 
@@ -77,6 +78,22 @@ void NavierStokes<dim>::set_stabilization_options(
   const StabilizationOptions &options)
 {
     stabilization_options = options;
+}
+
+template <int dim>
+double NavierStokes<dim>::compute_supg_tau(const double beta_norm,
+                                           const double h_K) const
+{
+    const double transient_scale = 2.0 / delta_t;
+    const double convective_scale = 2.0 * beta_norm / h_K;
+    const double diffusive_scale = 4.0 * nu / (h_K * h_K);
+
+    const double denominator =
+      std::sqrt(transient_scale * transient_scale +
+                convective_scale * convective_scale +
+                diffusive_scale * diffusive_scale);
+
+    return 1.0 / denominator;
 }
 
 template <int dim>
@@ -428,18 +445,25 @@ void NavierStokes<dim>::assemble_timestep(
               f(fe_values.quadrature_point(q), time);
             const Tensor<1, dim> f_old_loc =
               f(fe_values.quadrature_point(q), previous_time);
+            const double tau_K =
+              (stabilization_options.supg ?
+                 compute_supg_tau(beta.norm(), cell->diameter()) :
+                 0.0);
 
             for (unsigned int i = 0; i < dofs_per_cell; ++i)
             {
                 const Tensor<1, dim> phi_vel_i = fe_values[velocity].value(i, q);
                 const Tensor<2, dim> grad_phi_vel_i =
                   fe_values[velocity].gradient(i, q);
+                const Tensor<1, dim> streamline_test = grad_phi_vel_i * beta;
 
                 //LHS contributions
                 for (unsigned int j = 0; j < dofs_per_cell; ++j)
                 {
                     const Tensor<1, dim> phi_vel_j = fe_values[velocity].value(j, q);
                     const Tensor<2, dim> grad_phi_vel_j = fe_values[velocity].gradient(j, q);
+                    const Tensor<1, dim> grad_psi_j =
+                      fe_values[pressure].gradient(j, q);
                     
                     // Implicit theta part of the Oseen/Picard convection.
                     cell_matrix(i, j) += theta * scalar_product(grad_phi_vel_j * beta, phi_vel_i) *
@@ -453,9 +477,28 @@ void NavierStokes<dim>::assemble_timestep(
                           fe_values.JxW(q);
 
                     // ----- QUI SUPG / PSPG -----
-                    // Assemblare i termini elemento-per-elemento con tau_K e
-                    // residuo di momento. Dopo l'implementazione, abilitarli da
-                    // .prm solo per Re >= 100 e confrontare oscillazioni drag/lift.
+                    // SUPG residual without the -nu Delta u term:
+                    // tau_K * (1/dt u + (beta.grad)u + grad p,
+                    //          (beta.grad)v)_K.
+                    if (stabilization_options.supg)
+                    {
+                        Tensor<1, dim> supg_velocity_residual;
+                        for (unsigned int d = 0; d < dim; ++d)
+                            supg_velocity_residual[d] =
+                              (1.0 / delta_t) * phi_vel_j[d] +
+                              (grad_phi_vel_j * beta)[d];
+
+                        cell_matrix(i, j) +=
+                          tau_K *
+                          scalar_product(supg_velocity_residual,
+                                         streamline_test) *
+                          fe_values.JxW(q);
+
+                        cell_matrix(i, j) +=
+                          tau_K *
+                          scalar_product(grad_psi_j, streamline_test) *
+                          fe_values.JxW(q);
+                    }
                 }
 
                 // ----- QUI RHS THETA / RESIDUO NON LINEARE -----
@@ -486,6 +529,18 @@ void NavierStokes<dim>::assemble_timestep(
                       (1.0 - theta) * 0.5 * div_u_old *
                       scalar_product(u_old, phi_vel_i) *
                       fe_values.JxW(q);
+
+                if (stabilization_options.supg)
+                {
+                    Tensor<1, dim> supg_rhs;
+                    for (unsigned int d = 0; d < dim; ++d)
+                        supg_rhs[d] =
+                          (1.0 / delta_t) * u_old[d] + f_new_loc[d];
+
+                    cell_rhs(i) +=
+                      tau_K * scalar_product(supg_rhs, streamline_test) *
+                      fe_values.JxW(q);
+                }
             }
         }
 
@@ -701,8 +756,8 @@ void NavierStokes<dim>::run()
         pcout << "   Warning: nonlinear strategies are parsed but the nonlinear "
                  "iteration loop is not implemented yet."
               << std::endl;
-    if (stabilization_options.supg || stabilization_options.pspg)
-        pcout << "   Warning: SUPG/PSPG options are parsed but their assembly is "
+    if (stabilization_options.pspg)
+        pcout << "   Warning: PSPG option is parsed but its assembly is "
                  "not implemented yet."
               << std::endl;
 
