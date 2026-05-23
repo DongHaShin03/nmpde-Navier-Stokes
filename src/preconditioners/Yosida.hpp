@@ -37,6 +37,8 @@ class Yosida : public NavierStokesPreconditioner
                 diag_D_inv[i] = 1.0 / d;
                 neg_diag_D_inv[i] = -1.0 / d;
             }
+            diag_D_inv.compress(VectorOperation::insert);
+            neg_diag_D_inv.compress(VectorOperation::insert);
 
             B->mmult(negative_S_tilde, *B_T, neg_diag_D_inv);
 
@@ -79,8 +81,8 @@ class Yosida : public NavierStokesPreconditioner
             SolverControl solver_S(maxiter,
                                    std::max(1e-14,
                                             relative_tolerance * tmp_p.l2_norm()));
-            SolverCG<TrilinosWrappers::MPI::Vector> solver_cg(solver_S);
-            solver_cg.solve(negative_S_tilde, yp, tmp_p, preconditioner_S);
+            SolverGMRES<TrilinosWrappers::MPI::Vector> solver_gmres_S(solver_S);
+            solver_gmres_S.solve(negative_S_tilde, yp, tmp_p, preconditioner_S);
 
             dst.block(1) = yp;
 

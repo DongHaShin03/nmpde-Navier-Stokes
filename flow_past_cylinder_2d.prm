@@ -1,10 +1,10 @@
 subsection Mesh and discretization
-  set Mesh file = ../mesh/ns-mesh2D-level3.msh
+  set Mesh file = ../mesh/ns-mesh2D-level1.msh
   set Velocity degree = 2
   set Pressure degree = 1
-  set Final time = 0.08
-  set Theta = 0.6
-  set Time step = 0.004
+  set Final time = 0.10
+  set Theta = 1.0
+  set Time step = 0.002
 end
 
 subsection Solver
@@ -15,7 +15,7 @@ subsection Solver
   set GMRES restart length = 300
   set Pressure regularization = 0.0
   set Linear max iterations = 10000
-  set Linear relative tolerance = 1e-2
+  set Linear relative tolerance = 1e-6
   set Linear absolute tolerance = 1e-10
   set Preconditioner = yosida
 end
@@ -23,20 +23,21 @@ end
 subsection Stabilization
   set Temam = true
   set Grad-div = true
-  set Grad-div coefficient = 0.05
+  set Grad-div coefficient = 0.01
   set SUPG = true
   set PSPG = false
 end
 
 subsection Physics
-  set Viscosity = 0.01
-  set Inlet velocity = 2.0
+  set Viscosity = 0.05
+  set Inlet velocity = 1.0
+  set Inlet ramp time = 0.02
   set Outlet pressure = 0.0
 end
 
 subsection Force coefficients
-  set Reference velocity = 2.0
-  set Reference length = 25.0
+  set Reference velocity = 1.0
+  set Reference length = 1.0
 end
 
 subsection Boundary ids

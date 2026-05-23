@@ -1,5 +1,8 @@
 #include "FlowPastCylinder2D.hpp"
 
+#include <algorithm>
+#include <cmath>
+
 void FlowPastCylinder2DParameters::declare_parameters(ParameterHandler &prm)
 {
     prm.enter_subsection("Mesh and discretization");
@@ -61,6 +64,7 @@ void FlowPastCylinder2DParameters::declare_parameters(ParameterHandler &prm)
     // dichiarare chiaramente Re e nu usati nel benchmark.
     prm.declare_entry("Viscosity", "0.5", Patterns::Double(0.0));
     prm.declare_entry("Inlet velocity", "0.05", Patterns::Double(0.0));
+    prm.declare_entry("Inlet ramp time", "0.0", Patterns::Double(0.0));
     prm.declare_entry("Outlet pressure", "0.0", Patterns::Double());
     prm.leave_subsection();
 
@@ -118,6 +122,7 @@ void FlowPastCylinder2DParameters::parse_parameters(ParameterHandler &prm)
     prm.enter_subsection("Physics");
     nu = prm.get_double("Viscosity");
     inlet_velocity = prm.get_double("Inlet velocity");
+    inlet_ramp_time = prm.get_double("Inlet ramp time");
     outlet_pressure = prm.get_double("Outlet pressure");
     prm.leave_subsection();
 
@@ -146,15 +151,25 @@ FlowPastCylinder2DParameters FlowPastCylinder2DParameters::read(
     return parameters;
 }
 
-FlowPastCylinder2DInlet::FlowPastCylinder2DInlet(const double inlet_velocity_)
+FlowPastCylinder2DInlet::FlowPastCylinder2DInlet(const double inlet_velocity_,
+                                                 const double ramp_time_)
   : Function<2>(3)
   , inlet_velocity(inlet_velocity_)
+  , ramp_time(ramp_time_)
 {}
 
 void FlowPastCylinder2DInlet::vector_value(const Point<2> &,
                                            Vector<double> &values) const
 {
-    values[0] = inlet_velocity;
+    double ramp_factor = 1.0;
+    if (ramp_time > 0.0)
+    {
+        const double s = std::clamp(this->get_time() / ramp_time, 0.0, 1.0);
+        constexpr double pi = 3.141592653589793238462643383279502884;
+        ramp_factor = 0.5 * (1.0 - std::cos(pi * s));
+    }
+
+    values[0] = ramp_factor * inlet_velocity;
     values[1] = 0.0;
     values[2] = 0.0;
 }
@@ -184,7 +199,7 @@ FlowPastCylinder2DCase::FlowPastCylinder2DCase(
   , outlet_boundary_id(parameters.outlet_boundary_id)
   , walls_boundary_id(parameters.walls_boundary_id)
   , cylinder_boundary_id(parameters.cylinder_boundary_id)
-  , inlet(parameters.inlet_velocity)
+  , inlet(parameters.inlet_velocity, parameters.inlet_ramp_time)
   , outlet(parameters.outlet_pressure)
   , zero_velocity(dim + 1)
 {}

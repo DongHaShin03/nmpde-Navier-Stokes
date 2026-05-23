@@ -412,6 +412,15 @@ void NavierStokes<dim>::assemble_timestep(
     std::vector<double> beta_velocity_divergences(n_q);
 
     const double previous_time = time - delta_t;
+    // Boundary Function objects store their time internally; keep them in sync
+    // before evaluating time-dependent Dirichlet/Neumann data.
+    for (const auto &boundary_function : dirichlet)
+        if (boundary_function.second != nullptr)
+            const_cast<Function<dim> *>(boundary_function.second)->set_time(time);
+    for (const auto &boundary_function : neumann)
+        if (boundary_function.second != nullptr)
+            const_cast<Function<dim> *>(boundary_function.second)->set_time(time);
+
     for (const auto &cell : dof_handler.active_cell_iterators())
     {
         if (!cell->is_locally_owned())
@@ -629,10 +638,6 @@ void NavierStokes<dim>::solve()
       std::max(linear_absolute_tolerance, linear_relative_tolerance * rhs_norm);
     SolverControl solver_control(linear_max_iterations, linear_tolerance);
 
-    SolverGMRES<TrilinosWrappers::MPI::BlockVector>::AdditionalData additional_data(
-      gmres_restart_length);
-    SolverGMRES<TrilinosWrappers::MPI::BlockVector> solver(solver_control,
-                                                             additional_data);
     pcout << "Solving the linear system" << std::endl;
     pcout << "  RHS norm = " << rhs_norm
           << ", tol = " << linear_tolerance
@@ -653,16 +658,26 @@ void NavierStokes<dim>::solve()
     required_matrices.BT = &system_matrix.block(0, 1);
     required_matrices.solution_template = &solution_owned;
 
+    pcout << "  Building preconditioner = "
+          << to_string(preconditioner_kind) << std::endl;
     auto preconditioner = make_preconditioner(preconditioner_kind);
     preconditioner->initialize(required_matrices);
+    pcout << "  Preconditioner ready" << std::endl;
 
+    SolverFGMRES<TrilinosWrappers::MPI::BlockVector>::AdditionalData
+      additional_data(gmres_restart_length);
+    SolverFGMRES<TrilinosWrappers::MPI::BlockVector> solver(solver_control,
+                                                            additional_data);
+
+    pcout << "  Starting outer FGMRES" << std::endl;
     solver.solve(system_matrix, solution_owned, system_rhs, *preconditioner);
+    pcout << "  Outer FGMRES completed" << std::endl;
 
     // ----- QUI METRICHE SOLVER LINEARE -----
     // Salvare last_step(), convergenza/fallimenti e tempo del solve in una
     // struttura condivisa o CSV. Dopo l'implementazione, ogni riga benchmark
     // deve riportare iterazioni GMRES e tempo per time step.
-    pcout << "  " << solver_control.last_step() << " GMRES iterations"
+    pcout << "  " << solver_control.last_step() << " FGMRES iterations"
           << std::endl;
 }
 

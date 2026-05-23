@@ -59,20 +59,23 @@ void NavierStokes2D::compute_forces()
 
             for (unsigned int q = 0; q < n_q_face; ++q)
             {
-                Tensor<2, dim> stress;
+                Tensor<2, dim> viscous_stress;
 
                 for (unsigned int i = 0; i < dim; ++i)
                     for (unsigned int j = 0; j < dim; ++j)
-                        stress[i][j] = this->nu *
-                                       (grad_u[q][i][j] + grad_u[q][j][i]);
+                        viscous_stress[i][j] =
+                          this->nu * (grad_u[q][i][j] + grad_u[q][j][i]);
 
-                for (unsigned int i = 0; i < dim; ++i)
-                    stress[i][i] -= p[q];
+                const Tensor<1, dim> viscous_traction =
+                  viscous_stress * normal[q];
+                const Tensor<1, dim> pressure_traction = -p[q] * normal[q];
+                const Tensor<1, dim> traction =
+                  viscous_traction + pressure_traction;
 
-                const Tensor<1, dim> traction = stress * normal[q];
-
-                force_x += traction[0] * fe_face_values.JxW(q);
-                force_y += traction[1] * fe_face_values.JxW(q);
+                // The normal points out of the fluid domain, so the force on
+                // the cylinder has the opposite sign.
+                force_x -= traction[0] * fe_face_values.JxW(q);
+                force_y -= traction[1] * fe_face_values.JxW(q);
             }
         }
     }
@@ -80,7 +83,8 @@ void NavierStokes2D::compute_forces()
     const double total_force_x = Utilities::MPI::sum(force_x, MPI_COMM_WORLD);
     const double total_force_y = Utilities::MPI::sum(force_y, MPI_COMM_WORLD);
 
-    const double denominator = force_coefficient_reference_velocity *
+    const double denominator = 0.5 *
+                               force_coefficient_reference_velocity *
                                force_coefficient_reference_velocity *
                                force_coefficient_reference_length;
 
