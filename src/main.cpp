@@ -9,8 +9,8 @@ int main(int argc, char *argv[])
     const std::string parameter_file =
       (argc > 1 ? std::string(argv[1]) : "../flow_past_cylinder_2d.prm");
 
-    const FlowPastCylinder2DParameters parameters =
-      FlowPastCylinder2DParameters::read(parameter_file);
+    const FlowPastCylinder2DConfig parameters =
+      FlowPastCylinder2DParser::read(parameter_file);
 
     const auto f = [](const Point<dim> &, const double &)
     {

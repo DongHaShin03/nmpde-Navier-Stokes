@@ -3,17 +3,17 @@
 #include <algorithm>
 #include <cmath>
 
-void FlowPastCylinder2DParameters::declare_parameters(ParameterHandler &prm)
+void FlowPastCylinder2DParser::declare_parameters(ParameterHandler &prm)
 {
     prm.enter_subsection("Mesh and discretization");
     prm.declare_entry("Mesh file",
-                      "../mesh/ns-mesh2D-level1.msh",
+                      "../mesh/navierstokes_L0.msh",
                       Patterns::Anything());
     prm.declare_entry("Velocity degree", "2", Patterns::Integer(1));
     prm.declare_entry("Pressure degree", "1", Patterns::Integer(1));
-    prm.declare_entry("Final time", "0.05", Patterns::Double(0.0));
-    prm.declare_entry("Theta", "1.0", Patterns::Double(0.0, 1.0));
-    prm.declare_entry("Time step", "0.0025", Patterns::Double(0.0));
+    prm.declare_entry("Final time", "7", Patterns::Double(0.0));
+    prm.declare_entry("Theta", "0.6", Patterns::Double(0.0, 1.0));
+    prm.declare_entry("Time step", "0.1", Patterns::Double(0.0));
     prm.leave_subsection();
 
     prm.enter_subsection("Solver");
@@ -21,39 +21,39 @@ void FlowPastCylinder2DParameters::declare_parameters(ParameterHandler &prm)
                       "none",
                       Patterns::Selection(
                         "none|picard|picard_relaxed|newton|newton_damped"));
-    prm.declare_entry("Nonlinear iterations", "8", Patterns::Integer(1));
+    prm.declare_entry("Nonlinear iterations", "2", Patterns::Integer(1));
     prm.declare_entry("Nonlinear tolerance", "1e-6", Patterns::Double(0.0));
     prm.declare_entry("Picard relaxation", "1.0", Patterns::Double(0.0, 1.0));
-    prm.declare_entry("GMRES restart length", "800", Patterns::Integer(1));
+    prm.declare_entry("GMRES restart length", "300", Patterns::Integer(1));
     prm.declare_entry("Pressure regularization", "0.0", Patterns::Double(0.0));
-    prm.declare_entry("Linear max iterations", "100000", Patterns::Integer(1));
-    prm.declare_entry("Linear relative tolerance", "5e-2", Patterns::Double(0.0));
-    prm.declare_entry("Linear absolute tolerance", "2e-2", Patterns::Double(0.0));
+    prm.declare_entry("Linear max iterations", "10000", Patterns::Integer(1));
+    prm.declare_entry("Linear relative tolerance", "1e-6", Patterns::Double(0.0));
+    prm.declare_entry("Linear absolute tolerance", "1e-10", Patterns::Double(0.0));
     prm.declare_entry("Preconditioner",
-                      "yosida",
+                      "pcd",
                       Patterns::Selection(
-                        "identity|simple|block_diagonal|block_triangular|yosida|pcd"));
+                        "identity|simple|block_triangular|yosida|pcd"));
     prm.leave_subsection();
 
     prm.enter_subsection("Stabilization");
     prm.declare_entry("Temam", "true", Patterns::Bool());
-    prm.declare_entry("Grad-div", "false", Patterns::Bool());
-    prm.declare_entry("Grad-div coefficient", "0.0", Patterns::Double(0.0));
-    prm.declare_entry("SUPG", "false", Patterns::Bool());
+    prm.declare_entry("Grad-div", "true", Patterns::Bool());
+    prm.declare_entry("Grad-div coefficient", "0.01", Patterns::Double(0.0));
+    prm.declare_entry("SUPG", "true", Patterns::Bool());
     prm.declare_entry("PSPG", "false", Patterns::Bool());
     prm.leave_subsection();
 
     prm.enter_subsection("Physics");
-    prm.declare_entry("Viscosity", "0.5", Patterns::Double(0.0));
-    prm.declare_entry("Inlet velocity", "0.05", Patterns::Double(0.0));
-    prm.declare_entry("Inlet channel height", "4.1", Patterns::Double(0.0));
-    prm.declare_entry("Inlet ramp time", "0.0", Patterns::Double(0.0));
+    prm.declare_entry("Viscosity", "0.0005", Patterns::Double(0.0));
+    prm.declare_entry("Inlet velocity", "1.5", Patterns::Double(0.0));
+    prm.declare_entry("Inlet channel height", "0.41", Patterns::Double(0.0));
+    prm.declare_entry("Inlet ramp time", "8.0", Patterns::Double(0.0));
     prm.declare_entry("Outlet pressure", "0.0", Patterns::Double());
     prm.leave_subsection();
 
     prm.enter_subsection("Force coefficients");
-    prm.declare_entry("Reference velocity", "0.05", Patterns::Double(0.0));
-    prm.declare_entry("Reference length", "25.0", Patterns::Double(0.0));
+    prm.declare_entry("Reference velocity", "1.0", Patterns::Double(0.0));
+    prm.declare_entry("Reference length", "0.1", Patterns::Double(0.0));
     prm.leave_subsection();
 
     prm.enter_subsection("Boundary ids");
@@ -64,72 +64,86 @@ void FlowPastCylinder2DParameters::declare_parameters(ParameterHandler &prm)
     prm.leave_subsection();
 }
 
-void FlowPastCylinder2DParameters::parse_parameters(ParameterHandler &prm)
+FlowPastCylinder2DConfig FlowPastCylinder2DParser::parse_parameters(
+  ParameterHandler &prm)
 {
+    FlowPastCylinder2DConfig config;
+
     prm.enter_subsection("Mesh and discretization");
-    mesh_file_name = prm.get("Mesh file");
-    degree_velocity = static_cast<unsigned int>(prm.get_integer("Velocity degree"));
-    degree_pressure = static_cast<unsigned int>(prm.get_integer("Pressure degree"));
-    T = prm.get_double("Final time");
-    theta = prm.get_double("Theta");
-    delta_t = prm.get_double("Time step");
+    config.mesh_file_name = prm.get("Mesh file");
+    config.degree_velocity =
+      static_cast<unsigned int>(prm.get_integer("Velocity degree"));
+    config.degree_pressure =
+      static_cast<unsigned int>(prm.get_integer("Pressure degree"));
+    config.T = prm.get_double("Final time");
+    config.theta = prm.get_double("Theta");
+    config.delta_t = prm.get_double("Time step");
     prm.leave_subsection();
 
     prm.enter_subsection("Solver");
-    nonlinear_method = parse_nonlinear_method(prm.get("Nonlinear method"));
-    nonlinear_max_iterations =
+    config.nonlinear_method = parse_nonlinear_method(prm.get("Nonlinear method"));
+    config.nonlinear_max_iterations =
       static_cast<unsigned int>(prm.get_integer("Nonlinear iterations"));
-    nonlinear_tolerance = prm.get_double("Nonlinear tolerance");
-    picard_relaxation = prm.get_double("Picard relaxation");
-    gmres_restart_length =
+    config.nonlinear_tolerance = prm.get_double("Nonlinear tolerance");
+    config.picard_relaxation = prm.get_double("Picard relaxation");
+    config.gmres_restart_length =
       static_cast<unsigned int>(prm.get_integer("GMRES restart length"));
-    pressure_regularization = prm.get_double("Pressure regularization");
-    linear_max_iterations =
+    config.pressure_regularization = prm.get_double("Pressure regularization");
+    config.linear_max_iterations =
       static_cast<unsigned int>(prm.get_integer("Linear max iterations"));
-    linear_relative_tolerance = prm.get_double("Linear relative tolerance");
-    linear_absolute_tolerance = prm.get_double("Linear absolute tolerance");
-    preconditioner = parse_preconditioner_kind(prm.get("Preconditioner"));
+    config.linear_relative_tolerance =
+      prm.get_double("Linear relative tolerance");
+    config.linear_absolute_tolerance =
+      prm.get_double("Linear absolute tolerance");
+    config.preconditioner = parse_preconditioner_kind(prm.get("Preconditioner"));
     prm.leave_subsection();
 
     prm.enter_subsection("Stabilization");
-    stabilization.temam = prm.get_bool("Temam");
-    stabilization.grad_div = prm.get_bool("Grad-div");
-    stabilization.gamma_grad_div = prm.get_double("Grad-div coefficient");
-    stabilization.supg = prm.get_bool("SUPG");
-    stabilization.pspg = prm.get_bool("PSPG");
+    config.stabilization.temam = prm.get_bool("Temam");
+    config.stabilization.grad_div = prm.get_bool("Grad-div");
+    config.stabilization.gamma_grad_div =
+      prm.get_double("Grad-div coefficient");
+    config.stabilization.supg = prm.get_bool("SUPG");
+    config.stabilization.pspg = prm.get_bool("PSPG");
     prm.leave_subsection();
 
     prm.enter_subsection("Physics");
-    nu = prm.get_double("Viscosity");
-    inlet_velocity = prm.get_double("Inlet velocity");
-    inlet_channel_height = prm.get_double("Inlet channel height");
-    inlet_ramp_time = prm.get_double("Inlet ramp time");
-    outlet_pressure = prm.get_double("Outlet pressure");
+    config.nu = prm.get_double("Viscosity");
+    config.inlet_velocity = prm.get_double("Inlet velocity");
+    config.inlet_channel_height = prm.get_double("Inlet channel height");
+    config.inlet_ramp_time = prm.get_double("Inlet ramp time");
+    config.outlet_pressure = prm.get_double("Outlet pressure");
     prm.leave_subsection();
 
     prm.enter_subsection("Force coefficients");
-    force_coefficient_reference_velocity = prm.get_double("Reference velocity");
-    force_coefficient_reference_length = prm.get_double("Reference length");
+    config.force_coefficient_reference_velocity =
+      prm.get_double("Reference velocity");
+    config.force_coefficient_reference_length =
+      prm.get_double("Reference length");
     prm.leave_subsection();
 
     prm.enter_subsection("Boundary ids");
-    inlet_boundary_id = static_cast<types::boundary_id>(prm.get_integer("Inlet"));
-    outlet_boundary_id = static_cast<types::boundary_id>(prm.get_integer("Outlet"));
-    walls_boundary_id = static_cast<types::boundary_id>(prm.get_integer("Walls"));
-    cylinder_boundary_id = static_cast<types::boundary_id>(prm.get_integer("Cylinder"));
+    config.inlet_boundary_id =
+      static_cast<types::boundary_id>(prm.get_integer("Inlet"));
+    config.outlet_boundary_id =
+      static_cast<types::boundary_id>(prm.get_integer("Outlet"));
+    config.walls_boundary_id =
+      static_cast<types::boundary_id>(prm.get_integer("Walls"));
+    config.cylinder_boundary_id =
+      static_cast<types::boundary_id>(prm.get_integer("Cylinder"));
     prm.leave_subsection();
+
+    return config;
 }
 
-FlowPastCylinder2DParameters FlowPastCylinder2DParameters::read(
+FlowPastCylinder2DConfig FlowPastCylinder2DParser::read(
   const std::string &parameter_file)
 {
     ParameterHandler prm;
     declare_parameters(prm);
     prm.parse_input(parameter_file);
 
-    FlowPastCylinder2DParameters parameters;
-    parameters.parse_parameters(prm);
-    return parameters;
+    return parse_parameters(prm);
 }
 
 FlowPastCylinder2DInlet::FlowPastCylinder2DInlet(const double inlet_velocity_,
@@ -179,7 +193,7 @@ double FlowPastCylinder2DOutletPressure::value(const Point<2> &,
 }
 
 FlowPastCylinder2DCase::FlowPastCylinder2DCase(
-  const FlowPastCylinder2DParameters &parameters)
+  const FlowPastCylinder2DConfig &parameters)
   : force_coefficient_reference_velocity(
       parameters.force_coefficient_reference_velocity)
   , force_coefficient_reference_length(parameters.force_coefficient_reference_length)

@@ -69,12 +69,8 @@ inline const char *to_string(const NonlinearMethod method)
 
 enum class PreconditionerKind
 {
-    // ----- QUI AGGIUNGERE PRECONDIZIONATORI -----
-    // Se nasce un nuovo precondizionatore, aggiungerlo qui, nel parser sotto,
-    // in PreconditionerFactory.hpp e nella selezione ammessa dal .prm.
     Identity,
     Simple,
-    BlockDiagonal,
     BlockTriangular,
     Yosida,
     PCD
@@ -87,8 +83,6 @@ inline PreconditionerKind parse_preconditioner_kind(const std::string &value)
         return PreconditionerKind::Identity;
     if (key == "simple")
         return PreconditionerKind::Simple;
-    if (key == "block_diagonal")
-        return PreconditionerKind::BlockDiagonal;
     if (key == "block_triangular")
         return PreconditionerKind::BlockTriangular;
     if (key == "yosida")
@@ -107,8 +101,6 @@ inline const char *to_string(const PreconditionerKind preconditioner)
             return "identity";
         case PreconditionerKind::Simple:
             return "simple";
-        case PreconditionerKind::BlockDiagonal:
-            return "block_diagonal";
         case PreconditionerKind::BlockTriangular:
             return "block_triangular";
         case PreconditionerKind::Yosida:

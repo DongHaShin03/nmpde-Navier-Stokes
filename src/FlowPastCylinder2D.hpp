@@ -5,54 +5,61 @@
 
 #include "NavierStokes2D.hpp"
 
-struct FlowPastCylinder2DParameters
+struct FlowPastCylinder2DConfig
 {
-    std::string mesh_file_name = "../mesh/ns-mesh2D-level1.msh";
+    std::string mesh_file_name = "../mesh/navierstokes_L0.msh";
     unsigned int degree_velocity = 2;
     unsigned int degree_pressure = 1;
 
-    double nu = 0.5;
-    double T = 0.05;
-    double theta = 1.0;
-    double delta_t = 0.0025;
+    double nu = 0.0005;
+    double T = 7.0;
+    double theta = 0.6;
+    double delta_t = 0.1;
 
     NonlinearMethod nonlinear_method = NonlinearMethod::None;
-    unsigned int nonlinear_max_iterations = 8;
+    unsigned int nonlinear_max_iterations = 2;
     double nonlinear_tolerance = 1e-6;
     double picard_relaxation = 1.0;
 
-    unsigned int gmres_restart_length = 800;
+    unsigned int gmres_restart_length = 300;
     double pressure_regularization = 0.0;
-    unsigned int linear_max_iterations = 100000;
-    double linear_relative_tolerance = 5e-2;
-    double linear_absolute_tolerance = 2e-2;
-    PreconditionerKind preconditioner = PreconditionerKind::Yosida;
+    unsigned int linear_max_iterations = 10000;
+    double linear_relative_tolerance = 1e-6;
+    double linear_absolute_tolerance = 1e-10;
+    PreconditionerKind preconditioner = PreconditionerKind::PCD;
 
-    StabilizationOptions stabilization;
+    StabilizationOptions stabilization = {true, true, 0.01, true, false};
 
-    double inlet_velocity = 0.05;
-    double inlet_channel_height = 4.1;
-    double inlet_ramp_time = 0.0;
+    double inlet_velocity = 1.5;
+    double inlet_channel_height = 0.41;
+    double inlet_ramp_time = 8.0;
     double outlet_pressure = 0.0;
 
-    double force_coefficient_reference_velocity = 0.05;
-    double force_coefficient_reference_length = 25.0;
+    double force_coefficient_reference_velocity = 1.0;
+    double force_coefficient_reference_length = 0.1;
 
     types::boundary_id inlet_boundary_id = 1;
     types::boundary_id outlet_boundary_id = 2;
     types::boundary_id walls_boundary_id = 3;
     types::boundary_id cylinder_boundary_id = 5;
 
-    static void declare_parameters(ParameterHandler &prm);
-    void parse_parameters(ParameterHandler &prm);
-    static FlowPastCylinder2DParameters read(const std::string &parameter_file);
+};
+
+class FlowPastCylinder2DParser
+{
+    public:
+        static void declare_parameters(ParameterHandler &prm);
+        static FlowPastCylinder2DConfig read(const std::string &parameter_file);
+
+    private:
+        static FlowPastCylinder2DConfig parse_parameters(ParameterHandler &prm);
 };
 
 class FlowPastCylinder2DInlet : public Function<2>
 {
     public:
-        explicit FlowPastCylinder2DInlet(const double inlet_velocity = 1.0,
-                                         const double channel_height = 4.1,
+        explicit FlowPastCylinder2DInlet(const double inlet_velocity = 1.5,
+                                         const double channel_height = 0.41,
                                          const double ramp_time = 0.0);
 
         void vector_value(const Point<2> &, Vector<double> &values) const override;
@@ -67,7 +74,7 @@ class FlowPastCylinder2DInlet : public Function<2>
 class FlowPastCylinder2DOutletPressure : public Function<2>
 {
     public:
-        explicit FlowPastCylinder2DOutletPressure(const double outlet_pressure = -1.0);
+        explicit FlowPastCylinder2DOutletPressure(const double outlet_pressure = 0.0);
 
         double value(const Point<2> &, const unsigned int component = 0) const override;
 
@@ -80,7 +87,7 @@ class FlowPastCylinder2DCase
     public:
         static constexpr unsigned int dim = NavierStokes2D::dim;
 
-        explicit FlowPastCylinder2DCase(const FlowPastCylinder2DParameters &parameters);
+        explicit FlowPastCylinder2DCase(const FlowPastCylinder2DConfig &parameters);
 
         void apply_to(NavierStokes2D &problem);
 

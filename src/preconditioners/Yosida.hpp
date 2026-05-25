@@ -9,24 +9,25 @@
 class Yosida : public NavierStokesPreconditioner
 {
     public:
-        AssemblyFlags get_needed_matrices() const override { return {true, false}; }
+        AssemblyFlags get_needed_matrices() const override
+        {
+            // Yosida only needs M_u 
+            // S_Y ~= -B diag(M_u)^{-1} B^T.
+            return {true, false};
+        }
 
         void initialize(const RequiredMatrices &data) override
         {
-            // ----- QUI YOSIDA: VALIDAZIONE NUMERICA -----
-            // Controllare se usare velocity_mass vera oppure il blocco F come
-            // fallback. Dopo l'implementazione di M_u, confrontare iterazioni
-            // GMRES prima/dopo su Re 20 e Re 100.
             if (data.velocity_stiffness == nullptr || data.B == nullptr ||
                 data.BT == nullptr || data.solution_template == nullptr)
                 throw std::runtime_error(
-                  "Yosida preconditioner requires F, B, B^T and a solution template.");
+                  "Yosida preconditioner requires F, B, B^T and a solution template");
 
             F = data.velocity_stiffness;
             B = data.B;
-            B_T = data.BT;
-            M = (data.velocity_mass != nullptr ? data.velocity_mass :
-                                                data.velocity_stiffness);
+            B_T = data.BT;         
+            M = data.velocity_mass;
+                                                
 
             diag_D_inv.reinit(data.solution_template->block(0));
             neg_diag_D_inv.reinit(data.solution_template->block(0));
@@ -40,6 +41,7 @@ class Yosida : public NavierStokesPreconditioner
             diag_D_inv.compress(VectorOperation::insert);
             neg_diag_D_inv.compress(VectorOperation::insert);
 
+            // negative_S_tilde = -B diag(M_u)^{-1} B^T.
             B->mmult(negative_S_tilde, *B_T, neg_diag_D_inv);
 
             preconditioner_F.initialize(*F);
@@ -49,10 +51,6 @@ class Yosida : public NavierStokesPreconditioner
         void vmult(TrilinosWrappers::MPI::BlockVector       &dst,
                    const TrilinosWrappers::MPI::BlockVector &src) const override
         {
-            // ----- QUI YOSIDA: TOLLERANZE INTERNE -----
-            // Rendere maxiter e tolleranze dei solve interni configurabili.
-            // Dopo il cambio, riportare anche le iterazioni interne se servono
-            // al confronto tra precondizionatori.
             const unsigned int maxiter = 100000;
             const double relative_tolerance = 1e-2;
 
@@ -72,8 +70,11 @@ class Yosida : public NavierStokesPreconditioner
                                             relative_tolerance *
                                               src.block(0).l2_norm()));
             SolverGMRES<TrilinosWrappers::MPI::Vector> solver_gmres(solver_F);
+            
+            // Step 1: y_u ~= F^{-1} r_u.
             solver_gmres.solve(*F, yu, src.block(0), preconditioner_F);
 
+            // Step 2: r_p = r_p - B y_u.
             B->vmult(tmp_p, yu);
             tmp_p *= -1.0;
             tmp_p += src.block(1);
@@ -82,10 +83,14 @@ class Yosida : public NavierStokesPreconditioner
                                    std::max(1e-14,
                                             relative_tolerance * tmp_p.l2_norm()));
             SolverGMRES<TrilinosWrappers::MPI::Vector> solver_gmres_S(solver_S);
+
+            // Step 2: y_p ~= S_Y^(-1) r_p.
             solver_gmres_S.solve(negative_S_tilde, yp, tmp_p, preconditioner_S);
 
             dst.block(1) = yp;
 
+            // Step 3 correction_u ~= F^{-1}(-B^T y_p).
+            // Correction RHS in velocity space: stored B_T is -B^T.
             B_T->vmult(tmp_u, dst.block(1));
 
             SolverControl solver_F2(maxiter,
@@ -93,8 +98,11 @@ class Yosida : public NavierStokesPreconditioner
                                              relative_tolerance *
                                                tmp_u.l2_norm()));
             SolverGMRES<TrilinosWrappers::MPI::Vector> solver_gmres2(solver_F2);
+            
             solver_gmres2.solve(*F, correction_u, tmp_u, preconditioner_F);
 
+            // Final block-triangular Yosida application:
+            // y_u - correction_u, y_p.
             dst.block(0) = yu;
             dst.block(0) -= correction_u;
         }
