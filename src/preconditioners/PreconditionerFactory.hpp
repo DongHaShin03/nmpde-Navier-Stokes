@@ -6,6 +6,7 @@
 #include "BlockDiagonal.hpp"
 #include "BlockTriangular.hpp"
 #include "Identity.hpp"
+#include "PCD.hpp"
 #include "Simple.hpp"
 #include "Yosida.hpp"
 
@@ -28,12 +29,7 @@ make_preconditioner(const PreconditionerKind preconditioner)
         case PreconditionerKind::Yosida:
             return std::make_unique<Yosida>();
         case PreconditionerKind::PCD:
-            // ----- QUI REGISTRARE PCD -----
-            // Creare PCD.hpp, includerlo in questo file e sostituire questa
-            // eccezione con std::make_unique<PCD>(). Dopo il cambio, il valore
-            // "pcd" nel .prm deve lanciare una simulazione completa.
-            throw std::runtime_error(
-              "PCD preconditioner selected but not implemented yet.");
+            return std::make_unique<PCD>();
     }
 
     throw std::runtime_error("Unknown preconditioner kind.");

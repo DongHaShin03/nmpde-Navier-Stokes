@@ -1,10 +1,10 @@
 subsection Mesh and discretization
-  set Mesh file = ../mesh/ns-mesh2D-level1.msh
+  set Mesh file = ../mesh/navierstokes_L0.msh
   set Velocity degree = 2
   set Pressure degree = 1
-  set Final time = 0.10
-  set Theta = 1.0
-  set Time step = 0.002
+  set Final time = 7
+  set Theta = 0.6
+  set Time step = 0.1
 end
 
 subsection Solver
@@ -17,7 +17,7 @@ subsection Solver
   set Linear max iterations = 10000
   set Linear relative tolerance = 1e-6
   set Linear absolute tolerance = 1e-10
-  set Preconditioner = yosida
+  set Preconditioner = pcd
 end
 
 subsection Stabilization
@@ -29,15 +29,16 @@ subsection Stabilization
 end
 
 subsection Physics
-  set Viscosity = 0.05
-  set Inlet velocity = 1.0
-  set Inlet ramp time = 0.02
+  set Viscosity = 0.0005
+  set Inlet velocity = 1.5
+  set Inlet channel height = 0.41
+  set Inlet ramp time = 8.0
   set Outlet pressure = 0.0
 end
 
 subsection Force coefficients
   set Reference velocity = 1.0
-  set Reference length = 1.0
+  set Reference length = 0.1
 end
 
 subsection Boundary ids

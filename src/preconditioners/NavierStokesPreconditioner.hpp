@@ -14,7 +14,9 @@
 
 struct AssemblyFlags
 {
+    // Request assembly of M_u = (phi_j, phi_i).
     bool Mu = false;
+    // Request assembly of M_p = (psi_j, psi_i).
     bool Mp = false;
 };
 
