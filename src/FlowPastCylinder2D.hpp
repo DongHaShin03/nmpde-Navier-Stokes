@@ -31,6 +31,7 @@ struct FlowPastCylinder2DParameters
     StabilizationOptions stabilization;
 
     double inlet_velocity = 0.05;
+    double inlet_channel_height = 4.1;
     double inlet_ramp_time = 0.0;
     double outlet_pressure = 0.0;
 
@@ -51,6 +52,7 @@ class FlowPastCylinder2DInlet : public Function<2>
 {
     public:
         explicit FlowPastCylinder2DInlet(const double inlet_velocity = 1.0,
+                                         const double channel_height = 4.1,
                                          const double ramp_time = 0.0);
 
         void vector_value(const Point<2> &, Vector<double> &values) const override;
@@ -58,6 +60,7 @@ class FlowPastCylinder2DInlet : public Function<2>
 
     private:
         const double inlet_velocity;
+        const double channel_height;
         const double ramp_time;
 };
 

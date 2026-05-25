@@ -6,10 +6,6 @@
 void FlowPastCylinder2DParameters::declare_parameters(ParameterHandler &prm)
 {
     prm.enter_subsection("Mesh and discretization");
-    // ----- QUI CONFIG CASI BENCHMARK -----
-    // Creare file .prm separati per Re 20, Re 100 e Re 200 invece di cambiare
-    // questi default. Dopo averli creati, ogni run deve essere riproducibile
-    // solo passando il file .prm da riga di comando.
     prm.declare_entry("Mesh file",
                       "../mesh/ns-mesh2D-level1.msh",
                       Patterns::Anything());
@@ -21,10 +17,6 @@ void FlowPastCylinder2DParameters::declare_parameters(ParameterHandler &prm)
     prm.leave_subsection();
 
     prm.enter_subsection("Solver");
-    // ----- QUI CONFIG SOLVER NON LINEARE -----
-    // Le opzioni sono gia' parsate. Dopo l'implementazione in NavierStokes.cpp,
-    // verificare che picard, picard_relaxed, newton e newton_damped cambino
-    // davvero il loop non lineare e producano metriche confrontabili.
     prm.declare_entry("Nonlinear method",
                       "none",
                       Patterns::Selection(
@@ -33,8 +25,6 @@ void FlowPastCylinder2DParameters::declare_parameters(ParameterHandler &prm)
     prm.declare_entry("Nonlinear tolerance", "1e-6", Patterns::Double(0.0));
     prm.declare_entry("Picard relaxation", "1.0", Patterns::Double(0.0, 1.0));
     prm.declare_entry("GMRES restart length", "800", Patterns::Integer(1));
-    // Kept for backward-compatible .prm files; the saddle-point p-p block is
-    // not regularized in the assembled Navier-Stokes system.
     prm.declare_entry("Pressure regularization", "0.0", Patterns::Double(0.0));
     prm.declare_entry("Linear max iterations", "100000", Patterns::Integer(1));
     prm.declare_entry("Linear relative tolerance", "5e-2", Patterns::Double(0.0));
@@ -46,10 +36,6 @@ void FlowPastCylinder2DParameters::declare_parameters(ParameterHandler &prm)
     prm.leave_subsection();
 
     prm.enter_subsection("Stabilization");
-    // ----- QUI CONFIG STABILIZZAZIONI -----
-    // Questi flag devono controllare l'assemblaggio reale di Temam, grad-div,
-    // SUPG e PSPG. Dopo l'implementazione, le stabilizzazioni devono poter
-    // essere accese/spente senza ricompilare.
     prm.declare_entry("Temam", "true", Patterns::Bool());
     prm.declare_entry("Grad-div", "false", Patterns::Bool());
     prm.declare_entry("Grad-div coefficient", "0.0", Patterns::Double(0.0));
@@ -58,20 +44,14 @@ void FlowPastCylinder2DParameters::declare_parameters(ParameterHandler &prm)
     prm.leave_subsection();
 
     prm.enter_subsection("Physics");
-    // ----- QUI REYNOLDS / VISCOSITA -----
-    // Decidere una convenzione unica: impostare nu direttamente oppure calcolarla
-    // da Re, velocita' e lunghezza di riferimento. Dopo il cambio, i .prm devono
-    // dichiarare chiaramente Re e nu usati nel benchmark.
     prm.declare_entry("Viscosity", "0.5", Patterns::Double(0.0));
     prm.declare_entry("Inlet velocity", "0.05", Patterns::Double(0.0));
+    prm.declare_entry("Inlet channel height", "4.1", Patterns::Double(0.0));
     prm.declare_entry("Inlet ramp time", "0.0", Patterns::Double(0.0));
     prm.declare_entry("Outlet pressure", "0.0", Patterns::Double());
     prm.leave_subsection();
 
     prm.enter_subsection("Force coefficients");
-    // ----- QUI NORMALIZZAZIONE DRAG/LIFT -----
-    // Validare U_ref e L_ref contro il benchmark Schaefer-Turek. Dopo il cambio,
-    // coefficients.csv deve indicare la normalizzazione usata.
     prm.declare_entry("Reference velocity", "0.05", Patterns::Double(0.0));
     prm.declare_entry("Reference length", "25.0", Patterns::Double(0.0));
     prm.leave_subsection();
@@ -122,6 +102,7 @@ void FlowPastCylinder2DParameters::parse_parameters(ParameterHandler &prm)
     prm.enter_subsection("Physics");
     nu = prm.get_double("Viscosity");
     inlet_velocity = prm.get_double("Inlet velocity");
+    inlet_channel_height = prm.get_double("Inlet channel height");
     inlet_ramp_time = prm.get_double("Inlet ramp time");
     outlet_pressure = prm.get_double("Outlet pressure");
     prm.leave_subsection();
@@ -152,24 +133,31 @@ FlowPastCylinder2DParameters FlowPastCylinder2DParameters::read(
 }
 
 FlowPastCylinder2DInlet::FlowPastCylinder2DInlet(const double inlet_velocity_,
+                                                 const double channel_height_,
                                                  const double ramp_time_)
   : Function<2>(3)
   , inlet_velocity(inlet_velocity_)
+  , channel_height(channel_height_)
   , ramp_time(ramp_time_)
 {}
 
-void FlowPastCylinder2DInlet::vector_value(const Point<2> &,
+// Inlet velocity profile
+void FlowPastCylinder2DInlet::vector_value(const Point<2> &point,
                                            Vector<double> &values) const
 {
     double ramp_factor = 1.0;
     if (ramp_time > 0.0)
     {
-        const double s = std::clamp(this->get_time() / ramp_time, 0.0, 1.0);
         constexpr double pi = 3.141592653589793238462643383279502884;
-        ramp_factor = 0.5 * (1.0 - std::cos(pi * s));
+        ramp_factor = std::sin(pi * this->get_time() / ramp_time);
     }
 
-    values[0] = ramp_factor * inlet_velocity;
+    const double y = std::clamp(point[1], 0.0, channel_height);
+    const double profile =
+      4.0 * inlet_velocity * y * (channel_height - y) /
+      (channel_height * channel_height);
+
+    values[0] = ramp_factor * profile;
     values[1] = 0.0;
     values[2] = 0.0;
 }
@@ -199,7 +187,9 @@ FlowPastCylinder2DCase::FlowPastCylinder2DCase(
   , outlet_boundary_id(parameters.outlet_boundary_id)
   , walls_boundary_id(parameters.walls_boundary_id)
   , cylinder_boundary_id(parameters.cylinder_boundary_id)
-  , inlet(parameters.inlet_velocity, parameters.inlet_ramp_time)
+  , inlet(parameters.inlet_velocity,
+          parameters.inlet_channel_height,
+          parameters.inlet_ramp_time)
   , outlet(parameters.outlet_pressure)
   , zero_velocity(dim + 1)
 {}
