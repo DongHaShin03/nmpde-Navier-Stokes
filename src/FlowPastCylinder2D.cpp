@@ -6,6 +6,7 @@
 void FlowPastCylinder2DParser::declare_parameters(ParameterHandler &prm)
 {
     prm.enter_subsection("Mesh and discretization");
+    prm.declare_entry("Dimension", "2", Patterns::Integer(2, 3));
     prm.declare_entry("Mesh file",
                       "../mesh/navierstokes_L0.msh",
                       Patterns::Anything());

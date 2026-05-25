@@ -84,6 +84,8 @@ template <int dim>
 double NavierStokes<dim>::compute_supg_tau(const double beta_norm,
                                            const double h_K) const
 {
+
+    // tau_K = ( (2/dt)^2 + (2|beta|/h_K)^2 + (4nu/h_K^2)^2 )^{-1/2}.
     const double transient_scale = 2.0 / delta_t;
     const double convective_scale = 2.0 * beta_norm / h_K;
     const double diffusive_scale = 4.0 * nu / (h_K * h_K);
@@ -94,6 +96,27 @@ double NavierStokes<dim>::compute_supg_tau(const double beta_norm,
                 diffusive_scale * diffusive_scale);
 
     return 1.0 / denominator;
+}
+
+template <int dim>
+bool NavierStokes<dim>::needs_velocity_mass_matrix() const
+{
+    return preconditioner_kind == PreconditionerKind::Yosida ||
+           preconditioner_kind == PreconditionerKind::PCD;
+}
+
+template <int dim>
+bool NavierStokes<dim>::needs_pressure_mass_matrix() const
+{
+    return preconditioner_kind == PreconditionerKind::Simple ||
+           preconditioner_kind == PreconditionerKind::BlockTriangular ||
+           preconditioner_kind == PreconditionerKind::PCD;
+}
+
+template <int dim>
+bool NavierStokes<dim>::needs_pcd_pressure_operators() const
+{
+    return preconditioner_kind == PreconditionerKind::PCD;
 }
 
 template <int dim>
@@ -240,7 +263,15 @@ void NavierStokes<dim>::setup()
         static_matrix.reinit(sparsity);
         convection_matrix.reinit(sparsity);
         system_matrix.reinit(sparsity);
-        pressure_mass.reinit(sparsity_pressure_mass);
+        if (needs_velocity_mass_matrix())
+            velocity_mass.reinit(sparsity);
+        if (needs_pressure_mass_matrix())
+            pressure_mass.reinit(sparsity_pressure_mass);
+        if (needs_pcd_pressure_operators())
+        {
+            pressure_laplacian_discrete.reinit(sparsity_pressure_mass);
+            pressure_convection_diffusion.reinit(sparsity_pressure_mass);
+        }
 
         pcout << "  Initializing the system right-hand side" << std::endl;
         system_rhs.reinit(block_owned_dofs, MPI_COMM_WORLD);
@@ -252,19 +283,19 @@ void NavierStokes<dim>::setup()
     }
 }
 
-//assemble static parts indipendent from time
-//static_matrix = (1/dt) M  +  nu A  +  B^T  +  B
-//CALLED ONCE at first timestep.
-//
-// ----- QUI THETA-METHOD: PARTE STATICA -----
-// Implementare la separazione tra termini impliciti theta*F(u^{n+1}) e
-// termini espliciti (1-theta)*F(u^n). Dopo l'implementazione, verificare che
-// theta=1 riproduca Backward Euler e theta=0.5 dia Crank-Nicolson sui test 2D.
+// Assemble the time-independent part of the monolithic matrix:
+// [ (1/dt)M_u + theta*nu*A_u + gamma*G   -B^T ]
+// [ B                                           0 ]
+// and, only when requested, the auxiliary pressure/velocity operators used by
+// the preconditioners.
 template <int dim>
 void NavierStokes<dim>::assemble_static()
 {
     pcout << "===============================================" << std::endl;
     pcout << "Assembling static matrices (mass + stiffness + pressure blocks)" << std::endl;
+
+    const bool assemble_velocity_mass = needs_velocity_mass_matrix();
+    const bool assemble_pressure_mass = needs_pressure_mass_matrix();
 
     const unsigned int dofs_per_cell = fe->dofs_per_cell;
     const unsigned int n_q = quadrature->size();
@@ -275,12 +306,16 @@ void NavierStokes<dim>::assemble_static()
                               update_quadrature_points | update_JxW_values);
     
     FullMatrix<double> cell_static(dofs_per_cell, dofs_per_cell);
+    FullMatrix<double> cell_velocity_mass(dofs_per_cell, dofs_per_cell);
     FullMatrix<double> cell_pressure_mass(dofs_per_cell, dofs_per_cell);
 
     std::vector<types::global_dof_index> dof_indices(dofs_per_cell);
 
     static_matrix = 0.0;
-    pressure_mass = 0.0;
+    if (assemble_velocity_mass)
+        velocity_mass = 0.0;
+    if (assemble_pressure_mass)
+        pressure_mass = 0.0;
 
     FEValuesExtractors::Vector velocity(0);
     FEValuesExtractors::Scalar pressure(dim);
@@ -293,7 +328,10 @@ void NavierStokes<dim>::assemble_static()
         fe_values.reinit(cell);
 
         cell_static = 0.0;
-        cell_pressure_mass = 0.0;
+        if (assemble_velocity_mass)
+            cell_velocity_mass = 0.0;
+        if (assemble_pressure_mass)
+            cell_pressure_mass = 0.0;
 
         for (unsigned int q = 0; q < n_q; ++q)
         {
@@ -304,7 +342,7 @@ void NavierStokes<dim>::assemble_static()
                 const double div_phi_vel_i = fe_values[velocity].divergence(i, q);
                 const double psi_i = fe_values[pressure].value(i, q);
 
-                //LHS contributions
+                // --- LHS contributions ---
                 for (unsigned int j = 0; j < dofs_per_cell; ++j)
                 {
                     const Tensor<1, dim> phi_vel_j = fe_values[velocity].value(j, q);
@@ -312,24 +350,34 @@ void NavierStokes<dim>::assemble_static()
                     const double div_phi_vel_j = fe_values[velocity].divergence(j, q);
                     const double psi_j = fe_values[pressure].value(j, q);
 
-                    //mass term
+                    // Velocity mass in the monolithic F block:
+                    // (1/dt) M_u, with (M_u)_{ij} = (phi_j, phi_i)
                     cell_static(i, j) +=
-                      //(1.0 / delta_t) * scalar_product(phi_vel_j, phi_vel_i) *
                       (1.0 / delta_t) * (phi_vel_j * phi_vel_i) *
                       fe_values.JxW(q);
 
-                    // Implicit theta part of the viscous term
+                    // Pure velocity mass used by Yosida and PCD:
+                    // (M_u)_{ij} = (phi_j, phi_i)
+                    if (assemble_velocity_mass)
+                        cell_velocity_mass(i, j) +=
+                          (phi_vel_j * phi_vel_i) * fe_values.JxW(q);
+
+                    // Velocity diffusion in the monolithic F block:
+                    // theta * nu * A_u, with
+                    // (A_u)_{ij} = (grad(phi_j), grad(phi_i))
                     cell_static(i, j) += theta * nu * scalar_product(grad_phi_vel_j, grad_phi_vel_i) *
                       fe_values.JxW(q);
 
-                    //pressure-velocity coupling
+                    // Pressure-gradient block -B^T:
+                    // -(p_j, div(v_i))
                     cell_static(i, j) -= psi_j * div_phi_vel_i * fe_values.JxW(q);
+
+                    // Divergence constraint block B:
+                    // (q_i, div(u_j))
                     cell_static(i, j) += psi_i * div_phi_vel_j * fe_values.JxW(q);
 
-                    // ----- QUI GRAD-DIV -----
-                    // Il termine e' agganciato al .prm; completare validazione,
-                    // scelta di gamma e report della norma div(u). Dopo averlo
-                    // implementato/tunato, confrontare gamma=0.1,1,10 su Re 20/100.
+                    // Grad-div stabilization on the velocity block:
+                    // gamma * (div(u_j), div(v_i))
                     if (stabilization_options.grad_div &&
                         stabilization_options.gamma_grad_div > 0.0)
                         cell_static(i, j) +=
@@ -337,46 +385,50 @@ void NavierStokes<dim>::assemble_static()
                           div_phi_vel_j * div_phi_vel_i *
                           fe_values.JxW(q);
 
-                    // ----- QUI MATRICI PER PRECONDIZIONATORI AVANZATI -----
-                    // Separare in modo esplicito M_p, M_u, K_p e F_p invece di
-                    // riusare solo pressure_mass. Dopo questo passo PCD puo'
-                    // ricevere operatori coerenti da RequiredMatrices.
-                    //pressure mass matrix
-                    cell_pressure_mass(i, j) +=
-                      psi_i * psi_j *  (1.0/ nu) * fe_values.JxW(q);
+                    // Pressure mass:
+                    // (M_p)_{ij} = (psi_j, psi_i)
+                    // Used by pressure-mass Schur approximations and by PCD
+                    if (assemble_pressure_mass)
+                        cell_pressure_mass(i, j) +=
+                          psi_i * psi_j * fe_values.JxW(q);
                 }
             }
         }
 
         cell->get_dof_indices(dof_indices);
         static_matrix.add(dof_indices, cell_static);
-        pressure_mass.add(dof_indices, cell_pressure_mass);
+        if (assemble_velocity_mass)
+            velocity_mass.add(dof_indices, cell_velocity_mass);
+        if (assemble_pressure_mass)
+            pressure_mass.add(dof_indices, cell_pressure_mass);
 
     }
 
     static_matrix.compress(VectorOperation::add);
-    pressure_mass.compress(VectorOperation::add);
+    if (assemble_velocity_mass)
+        velocity_mass.compress(VectorOperation::add);
+    if (assemble_pressure_mass)
+        pressure_mass.compress(VectorOperation::add);
 
     static_matrix_built = true;
 }
 
 
-//BUILDS AT EVERY TIMESTEP:
-//1. convection_matrix (with temam stabilization) =C(u_n)
-//2. system_rhs = 1/dt M u_n + f(t_n+1) + Neumann terms
-//3. system_matrix = static matrix + convection matrix
-//apply dirichlet boundary conditions
-//
-// ----- QUI THETA-METHOD: PARTE DI TIME STEP -----
-// Aggiungere al RHS i contributi espliciti (1-theta)*F(u^n). Dopo averlo fatto,
-// i run con theta=1,0.6,0.5 devono differire solo per lo schema temporale scelto.
-
+// Assemble the time-dependent Oseen step:
+// 1. velocity convection/stabilization C_u(beta) in convection_matrix
+// 2. RHS M_u u^n/dt + theta f^{n+1} + (1-theta)f^n
+//    minus the explicit theta parts of diffusion/convection/Temam
+// 3. optional PCD pressure operator F_p(beta)
+// 4. system_matrix = static_matrix + convection_matrix, then velocity
+//    Dirichlet boundary conditions are imposed
 template <int dim>
 void NavierStokes<dim>::assemble_timestep(
   const TrilinosWrappers::MPI::BlockVector &beta_solution)
 {
     pcout << "===============================================" << std::endl;
     pcout << "Assembling timestep" << std::endl;
+
+    const bool assemble_pcd_pressure = needs_pcd_pressure_operators();
 
     const unsigned int dofs_per_cell = fe->dofs_per_cell;
     const unsigned int n_q = quadrature->size();
@@ -393,11 +445,15 @@ void NavierStokes<dim>::assemble_timestep(
                                            update_JxW_values);
 
     FullMatrix<double> cell_matrix(dofs_per_cell, dofs_per_cell);
+    FullMatrix<double> cell_pressure_convection_diffusion(dofs_per_cell,
+                                                          dofs_per_cell);
     Vector<double> cell_rhs(dofs_per_cell);
 
     std::vector<types::global_dof_index> dof_indices(dofs_per_cell);
 
     convection_matrix = 0.0;
+    if (assemble_pcd_pressure)
+        pressure_convection_diffusion = 0.0;
     system_rhs = 0.0;
 
     FEValuesExtractors::Vector velocity(0);
@@ -410,6 +466,7 @@ void NavierStokes<dim>::assemble_timestep(
     std::vector<double> previous_velocity_divergences(n_q);
     std::vector<Tensor<1, dim>> beta_velocity_values(n_q);
     std::vector<double> beta_velocity_divergences(n_q);
+    std::vector<Tensor<1, dim>> beta_boundary_values(n_q_face);
 
     const double previous_time = time - delta_t;
     // Boundary Function objects store their time internally; keep them in sync
@@ -429,6 +486,9 @@ void NavierStokes<dim>::assemble_timestep(
         fe_values.reinit(cell);
 
         cell_matrix = 0.0;
+
+        if (assemble_pcd_pressure)
+            cell_pressure_convection_diffusion = 0.0;
         cell_rhs = 0.0;
 
         fe_values[velocity].get_function_values(old_solution,
@@ -465,30 +525,59 @@ void NavierStokes<dim>::assemble_timestep(
                 const Tensor<2, dim> grad_phi_vel_i =
                   fe_values[velocity].gradient(i, q);
                 const Tensor<1, dim> streamline_test = grad_phi_vel_i * beta;
+                const double psi_i = fe_values[pressure].value(i, q);
+                const Tensor<1, dim> grad_psi_i =
+                  fe_values[pressure].gradient(i, q);
 
                 //LHS contributions
                 for (unsigned int j = 0; j < dofs_per_cell; ++j)
                 {
                     const Tensor<1, dim> phi_vel_j = fe_values[velocity].value(j, q);
                     const Tensor<2, dim> grad_phi_vel_j = fe_values[velocity].gradient(j, q);
+                    const double psi_j = fe_values[pressure].value(j, q);
                     const Tensor<1, dim> grad_psi_j =
                       fe_values[pressure].gradient(j, q);
+
+                    if (assemble_pcd_pressure)
+                    {
+                        // F_p(beta) = (1/dt) M_p + theta*nu*A_p
+                        //             + theta*C_p(beta),
+                        // where (C_p)_{ij} = (beta . grad(psi_j), psi_i)
+                        cell_pressure_convection_diffusion(i, j) +=
+                          ((1.0 / delta_t) * psi_j * psi_i +
+                           theta * nu *
+                             scalar_product(grad_psi_j, grad_psi_i) +
+                           theta * (beta * grad_psi_j) * psi_i) *
+                          fe_values.JxW(q);
+
+                        if (stabilization_options.temam)
+                        {
+                            // Scalar Temam counterpart in pressure space:
+                            // theta/2 * ((div beta) psi_j, psi_i)
+                            cell_pressure_convection_diffusion(i, j) +=
+                              theta * 0.5 * div_beta * psi_j * psi_i *
+                              fe_values.JxW(q);
+                        }
+                    }
                     
-                    // Implicit theta part of the Oseen/Picard convection.
+                    // Oseen/Picard convection in the velocity block
+                    // theta * ((beta . grad) phi_j, phi_i)
                     cell_matrix(i, j) += theta * scalar_product(grad_phi_vel_j * beta, phi_vel_i) *
                        fe_values.JxW(q);
 
-                    // Temam stabilization uses the same beta as convection.
+                    // Temam skew-symmetry correction in velocity space
+                    // theta/2 * ((div beta) phi_j, phi_i)
                     if (stabilization_options.temam)
+                    {
                         cell_matrix(i, j) +=
                           theta * 0.5 * div_beta *
                           scalar_product(phi_vel_j, phi_vel_i) *
                           fe_values.JxW(q);
+                    }
 
-                    // ----- QUI SUPG / PSPG -----
-                    // SUPG residual without the -nu Delta u term:
-                    // tau_K * (1/dt u + (beta.grad)u + grad p,
-                    //          (beta.grad)v)_K.
+                    // SUPG stabilization, residual part tested along beta:
+                    // tau_K * ( (1/dt)u_j + (beta.grad)u_j + grad(p_j),
+                    //           (beta.grad)v_i )_K
                     if (stabilization_options.supg)
                     {
                         Tensor<1, dim> supg_velocity_residual;
@@ -510,34 +599,40 @@ void NavierStokes<dim>::assemble_timestep(
                     }
                 }
 
-                // ----- QUI RHS THETA / RESIDUO NON LINEARE -----
-                // Quando theta, Picard o Newton saranno completi, il RHS dovra'
-                // contenere anche i contributi espliciti e/o il residuo del
-                // problema non lineare. Dopo il cambio, controllare conservazione
-                // di massa e residuo non lineare a ogni time step.
+                // Time derivative RHS:
+                // (u^n/dt, v_i)
                 cell_rhs(i) += 1.0 / delta_t * scalar_product(u_old, phi_vel_i)  * fe_values.JxW(q);
                 Tensor<1, dim> theta_force;
                 for (unsigned int d = 0; d < dim; ++d)
                     theta_force[d] =
                       theta * f_new_loc[d] + (1.0 - theta) * f_old_loc[d];
+                
+                
+                // (theta f^{n+1} + (1-theta) f^n, v_i)
                 cell_rhs(i) +=
                   scalar_product(theta_force, phi_vel_i) *
                   fe_values.JxW(q);
 
+                // -(1-theta) * nu * (grad u^n, grad v_i)
                 cell_rhs(i) -=
                   (1.0 - theta) * nu *
                   scalar_product(grad_u_old, grad_phi_vel_i) *
                   fe_values.JxW(q);
+
+                // -(1-theta) * (((u^n.grad)u^n), v_i)
                 cell_rhs(i) -=
                   (1.0 - theta) *
                   scalar_product(grad_u_old * u_old, phi_vel_i) *
                   fe_values.JxW(q);
 
                 if (stabilization_options.temam)
+                {
+                    // -(1-theta)/2 * ((div u^n) u^n, v_i)
                     cell_rhs(i) -=
                       (1.0 - theta) * 0.5 * div_u_old *
                       scalar_product(u_old, phi_vel_i) *
                       fe_values.JxW(q);
+                }
 
                 if (stabilization_options.supg)
                 {
@@ -546,6 +641,7 @@ void NavierStokes<dim>::assemble_timestep(
                         supg_rhs[d] =
                           (1.0 / delta_t) * u_old[d] + f_new_loc[d];
 
+                    // tau_K * ((u^n/dt + f^{n+1}), (beta.grad)v_i)_K.
                     cell_rhs(i) +=
                       tau_K * scalar_product(supg_rhs, streamline_test) *
                       fe_values.JxW(q);
@@ -553,11 +649,7 @@ void NavierStokes<dim>::assemble_timestep(
             }
         }
 
-        // ----- QUI BC OUTFLOW / PRESSIONE -----
-        // Rendere robusto il trattamento dell'outlet pressure non nullo e
-        // documentare il segno. Dopo il cambio, validare Delta p sui punti
-        // benchmark davanti/dietro il cilindro.
-        // Border condition --- Neumann outflow
+        // BCs
         if (cell->at_boundary())
         {
             for (unsigned int face = 0; face < cell->n_faces(); ++face)
@@ -566,27 +658,63 @@ void NavierStokes<dim>::assemble_timestep(
                     continue;
 
                 const types::boundary_id face_id = cell->face(face)->boundary_id();
-                if (!neumann.count(face_id))
+                const bool has_pcd_robin_boundary =
+                  assemble_pcd_pressure && (dirichlet.count(face_id) > 0);
+                const bool has_neumann_boundary =
+                  (neumann.count(face_id) > 0);
+
+                if (!has_pcd_robin_boundary && !has_neumann_boundary)
                     continue;
 
                 fe_values_boundary.reinit(cell, face);
+
+                if (has_pcd_robin_boundary)
+                {
+                    fe_values_boundary[velocity].get_function_values(
+                      beta_solution, beta_boundary_values);
+
+                    for (unsigned int q = 0; q < n_q_face; ++q)
+                    {
+                        const double beta_dot_n =
+                          beta_boundary_values[q] *
+                          fe_values_boundary.normal_vector(q);
+
+                        for (unsigned int i = 0; i < dofs_per_cell; ++i)
+                        {
+                            const double psi_i =
+                              fe_values_boundary[pressure].value(i, q);
+
+                            for (unsigned int j = 0; j < dofs_per_cell; ++j)
+                            {
+                                const double psi_j =
+                                  fe_values_boundary[pressure].value(j, q);
+
+                                cell_pressure_convection_diffusion(i, j) +=
+                                  theta * beta_dot_n * psi_j * psi_i *
+                                  fe_values_boundary.JxW(q);
+                            }
+                        }
+                    }
+                }
+
+                if (!has_neumann_boundary)
+                    continue;
+
                 const Function<dim> *boundary_function = neumann[face_id];
 
                 for (unsigned int q = 0; q < n_q_face; ++q)
                 {
-                  //neuman datum. weak form
-                    const double h_loc = //p_out
+                    
+                    const double p_out =
                       boundary_function->value(fe_values_boundary.quadrature_point(q));
 
                     for (unsigned int i = 0; i < dofs_per_cell; ++i)
                     {
-                        cell_rhs(i) -= //REFACTOR: bc g = −p_out from weak formulation!! if outlet_pressure != 0 problem
-                          h_loc *
+                        cell_rhs(i) -=
+                          p_out *
                           scalar_product(fe_values_boundary.normal_vector(q), fe_values_boundary[velocity].value(i, q)) *
                           fe_values_boundary.JxW(q);
                     }
-                    //∫_Ω ν ∇u : ∇v - p div(v) = ∫_Ω f·v + ∫_Γ_N (ν ∇u - pI)n · v 
-                    //h_loc is the outlet of outlet pressure p_out, RHS = -p_out (n · phi_i)
                 }
             }
         }
@@ -594,16 +722,17 @@ void NavierStokes<dim>::assemble_timestep(
         cell->get_dof_indices(dof_indices);
 
         convection_matrix.add(dof_indices, cell_matrix);
+        if (assemble_pcd_pressure)
+            pressure_convection_diffusion.add(dof_indices,
+                                              cell_pressure_convection_diffusion);
         system_rhs.add(dof_indices, cell_rhs);
     }
 
     convection_matrix.compress(VectorOperation::add);
+    if (assemble_pcd_pressure)
+        pressure_convection_diffusion.compress(VectorOperation::add);
     system_rhs.compress(VectorOperation::add);
 
-    // ----- QUI COMPOSIZIONE SISTEMA THETA -----
-    // Quando theta sara' implementato, comporre system_matrix con i coefficienti
-    // corretti: massa sempre 1/dt, termini impliciti scalati da theta.
-    //now compose the 2
     system_matrix.copy_from(static_matrix);
     system_matrix.add(1.0, convection_matrix);
 
@@ -647,13 +776,48 @@ void NavierStokes<dim>::solve()
     //initial guess: sol from previous timestep
     solution_owned = solution;
 
-    // ----- QUI MATRICES PACK PER PRECONDIZIONATORI -----
-    // Ogni nuovo precondizionatore deve ricevere solo cio' che serve tramite
-    // RequiredMatrices. Dopo aver aggiunto una matrice nuova, valorizzarla qui
-    // senza cambiare la firma pubblica dei precondizionatori.
+    if (preconditioner_kind == PreconditionerKind::PCD)
+    {
+        pressure_laplacian_discrete = 0.0;
+        TrilinosWrappers::MPI::Vector neg_velocity_mass_diagonal_inverse;
+        neg_velocity_mass_diagonal_inverse.reinit(solution_owned.block(0));
+
+        // Diagonal inverse of the velocity mass:
+        // D_u^{-1} ~= diag(M_u)^{-1}
+        for (const auto i :
+             neg_velocity_mass_diagonal_inverse.locally_owned_elements())
+        {
+            const double d = velocity_mass.block(0, 0).diag_element(i);
+            neg_velocity_mass_diagonal_inverse[i] =
+              (std::abs(d) > 1e-30 ? -1.0 / d : 0.0);
+        }
+        neg_velocity_mass_diagonal_inverse.compress(VectorOperation::insert);
+
+        // Discrete pressure Laplacian used by PCD
+        // A_p^disc ~= B diag(M_u)^{-1} B^T
+        system_matrix.block(1, 0)
+          .mmult(pressure_laplacian_discrete.block(1, 1),
+                 system_matrix.block(0, 1),
+                 neg_velocity_mass_diagonal_inverse);
+       
+        pressure_laplacian_discrete.block(1, 1)
+          .add(1e-8, pressure_mass.block(1, 1));
+        pressure_laplacian_discrete.compress(VectorOperation::add);
+    }
+
     RequiredMatrices required_matrices;
     required_matrices.velocity_stiffness = &system_matrix.block(0, 0);
-    required_matrices.pressure_mass = &pressure_mass.block(1, 1);
+    if (needs_velocity_mass_matrix())
+        required_matrices.velocity_mass = &velocity_mass.block(0, 0);
+    if (needs_pressure_mass_matrix())
+        required_matrices.pressure_mass = &pressure_mass.block(1, 1);
+    if (needs_pcd_pressure_operators())
+    {
+        required_matrices.pressure_laplacian_discrete =
+          &pressure_laplacian_discrete.block(1, 1);
+        required_matrices.pressure_convection_diffusion =
+          &pressure_convection_diffusion.block(1, 1);
+    }
     required_matrices.B = &system_matrix.block(1, 0);
     required_matrices.BT = &system_matrix.block(0, 1);
     required_matrices.solution_template = &solution_owned;
@@ -673,10 +837,6 @@ void NavierStokes<dim>::solve()
     solver.solve(system_matrix, solution_owned, system_rhs, *preconditioner);
     pcout << "  Outer FGMRES completed" << std::endl;
 
-    // ----- QUI METRICHE SOLVER LINEARE -----
-    // Salvare last_step(), convergenza/fallimenti e tempo del solve in una
-    // struttura condivisa o CSV. Dopo l'implementazione, ogni riga benchmark
-    // deve riportare iterazioni GMRES e tempo per time step.
     pcout << "  " << solver_control.last_step() << " FGMRES iterations"
           << std::endl;
 }
@@ -795,11 +955,6 @@ void NavierStokes<dim>::run()
 
     output(); //write t=0
 
-    // ----- QUI LOOP NON LINEARE PICARD / NEWTON / NEWTON DAMPED -----
-    // Sostituire la singola chiamata assemble_timestep()+solve() con un loop su
-    // nonlinear_method. Dopo l'implementazione, il .prm deve poter selezionare
-    // none, picard, picard_relaxed, newton e newton_damped senza cambiare codice.
-    //time loop
     while (time < T - 0.5 * delta_t)
     {
         time += delta_t;
@@ -815,19 +970,20 @@ void NavierStokes<dim>::run()
 
         old_solution = solution;
 
-        // ----- QUI TIMING TIME STEP -----
-        // Misurare separatamente assemble_timestep(), solve(), compute_forces()
-        // e output(). Dopo l'implementazione, salvare tempo/step e tempo totale
-        // nelle metriche benchmark.
         assemble_timestep(old_solution);
 
         solve();
 
         solution = solution_owned;
 
-        //forces (drag / lift) 
-        if (dim == 2 && mpi_rank == 0 && timestep_number == 1)
-            std::ofstream("coefficients.txt", std::ios::trunc);
+        //forces (drag / lift)
+        if (mpi_rank == 0 && timestep_number == 1)
+        {
+            if (dim == 2)
+                std::ofstream("coefficients.txt", std::ios::trunc);
+            if (dim == 3)
+                std::ofstream("coefficients_3d.txt", std::ios::trunc);
+        }
 
         compute_forces();
         output();
@@ -836,5 +992,3 @@ void NavierStokes<dim>::run()
 
 template class NavierStokes<2>;
 template class NavierStokes<3>;
-
-

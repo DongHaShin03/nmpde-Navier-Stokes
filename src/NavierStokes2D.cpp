@@ -61,11 +61,15 @@ void NavierStokes2D::compute_forces()
             {
                 Tensor<2, dim> viscous_stress;
 
+                // Viscous stress tensor:
+                // tau(u) = nu * (grad u + grad u^T).
                 for (unsigned int i = 0; i < dim; ++i)
                     for (unsigned int j = 0; j < dim; ++j)
                         viscous_stress[i][j] =
                           this->nu * (grad_u[q][i][j] + grad_u[q][j][i]);
 
+                // Boundary traction of the Cauchy stress:
+                // sigma(u,p)n = tau(u)n - p n.
                 const Tensor<1, dim> viscous_traction =
                   viscous_stress * normal[q];
                 const Tensor<1, dim> pressure_traction = -p[q] * normal[q];
@@ -73,7 +77,8 @@ void NavierStokes2D::compute_forces()
                   viscous_traction + pressure_traction;
 
                 // The normal points out of the fluid domain, so the force on
-                // the cylinder has the opposite sign.
+                // the cylinder has the opposite sign:
+                // F_cyl = - int_Gamma_c sigma(u,p)n ds.
                 force_x -= traction[0] * fe_face_values.JxW(q);
                 force_y -= traction[1] * fe_face_values.JxW(q);
             }
@@ -83,6 +88,8 @@ void NavierStokes2D::compute_forces()
     const double total_force_x = Utilities::MPI::sum(force_x, MPI_COMM_WORLD);
     const double total_force_y = Utilities::MPI::sum(force_y, MPI_COMM_WORLD);
 
+    // Drag/lift coefficient normalization in 2D:
+    // C = F / (0.5 * U_ref^2 * L_ref), with density rho = 1.
     const double denominator = 0.5 *
                                force_coefficient_reference_velocity *
                                force_coefficient_reference_velocity *

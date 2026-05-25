@@ -21,6 +21,7 @@
 
 #include <deal.II/lac/precondition.h>
 #include <deal.II/lac/solver_gmres.h>
+
 #include <deal.II/lac/trilinos_block_sparse_matrix.h>
 #include <deal.II/lac/trilinos_parallel_block_vector.h>
 #include <deal.II/lac/trilinos_sparse_matrix.h>
@@ -116,11 +117,29 @@ class NavierStokes
         IndexSet locally_relevant_dofs;
         std::vector<IndexSet> block_relevant_dofs;
 
-        //MATRICES
+        // Matrices for the monolithic Oseen/Navier-Stokes problem.
+        //
+        // system_matrix has the saddle-point block form
+        //     [ F  -B^T ]
+        //     [ B   0   ]
+        // where F contains velocity mass, diffusion, convection and velocity
+        // stabilizations. The other matrices below are auxiliary operators
+        // used only by preconditioners that explicitly request them.
         TrilinosWrappers::BlockSparseMatrix static_matrix;
         TrilinosWrappers::BlockSparseMatrix convection_matrix;
         TrilinosWrappers::BlockSparseMatrix system_matrix;
+
+        // M_u = (phi_j, phi_i)
+        TrilinosWrappers::BlockSparseMatrix velocity_mass;
+
+        // M_p = (psi_j, psi_i)
         TrilinosWrappers::BlockSparseMatrix pressure_mass;
+
+        // A_p^disc ~= B diag(M_u)^{-1} B^T
+        TrilinosWrappers::BlockSparseMatrix pressure_laplacian_discrete;
+
+        // F_p = (1/dt)M_p + theta*nu*A_p + theta*C_p(beta)
+        TrilinosWrappers::BlockSparseMatrix pressure_convection_diffusion;
 
         TrilinosWrappers::MPI::BlockVector system_rhs;
 
@@ -149,6 +168,9 @@ class NavierStokes
     private:
         double compute_supg_tau(const double beta_norm,
                                 const double h_K) const;
+        bool needs_velocity_mass_matrix() const;
+        bool needs_pressure_mass_matrix() const;
+        bool needs_pcd_pressure_operators() const;
 
         bool static_matrix_built = false;
 };
