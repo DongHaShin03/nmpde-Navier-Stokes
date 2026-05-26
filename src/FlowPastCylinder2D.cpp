@@ -34,6 +34,9 @@ void FlowPastCylinder2DParser::declare_parameters(ParameterHandler &prm)
                       "pcd",
                       Patterns::Selection(
                         "identity|simple|block_triangular|yosida|pcd"));
+    prm.declare_entry("SIMPLE pressure relaxation",
+                      "0.7",
+                      Patterns::Double(0.0, 1.0));
     prm.leave_subsection();
 
     prm.enter_subsection("Stabilization");
@@ -97,6 +100,8 @@ FlowPastCylinder2DConfig FlowPastCylinder2DParser::parse_parameters(
     config.linear_absolute_tolerance =
       prm.get_double("Linear absolute tolerance");
     config.preconditioner = parse_preconditioner_kind(prm.get("Preconditioner"));
+    config.simple_pressure_relaxation =
+      prm.get_double("SIMPLE pressure relaxation");
     prm.leave_subsection();
 
     prm.enter_subsection("Stabilization");

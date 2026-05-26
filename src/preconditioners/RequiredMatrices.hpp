@@ -28,6 +28,10 @@ struct RequiredMatrices
     // Vector layout template for auxiliary distributed vectors
     const TrilinosWrappers::MPI::BlockVector *solution_template = nullptr;
 
+    // SIMPLE pressure correction relaxation:
+    // z_p <- alpha z_p, with 0 <= alpha <= 1.
+    double simple_pressure_relaxation = 0.7;
+
     
     // --- Pressure-space operators for PCD: ---
 

@@ -19,6 +19,7 @@ subsection Solver
   set Linear relative tolerance = 1e-6
   set Linear absolute tolerance = 1e-10
   set Preconditioner = pcd
+  set SIMPLE pressure relaxation = 0.7
 end
 
 subsection Stabilization

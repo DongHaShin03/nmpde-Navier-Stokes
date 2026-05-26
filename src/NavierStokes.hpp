@@ -71,6 +71,7 @@ class NavierStokes
                                           const double       linear_relative_tolerance_,
                                           const double       linear_absolute_tolerance_);
         void set_preconditioner(const PreconditionerKind preconditioner_kind_);
+        void set_simple_pressure_relaxation(const double relaxation);
         void set_stabilization_options(const StabilizationOptions &options);
 
         std::unique_ptr<Function<dim>> initial_condition;
@@ -165,6 +166,7 @@ class NavierStokes
         double picard_relaxation = 1.0;
 
         PreconditionerKind preconditioner_kind = PreconditionerKind::Yosida;
+        double simple_pressure_relaxation = 0.7;
         StabilizationOptions stabilization_options;
 
         ConditionalOStream pcout;

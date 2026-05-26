@@ -74,6 +74,12 @@ void NavierStokes<dim>::set_preconditioner(
 }
 
 template <int dim>
+void NavierStokes<dim>::set_simple_pressure_relaxation(const double relaxation)
+{
+    simple_pressure_relaxation = std::min(1.0, std::max(0.0, relaxation));
+}
+
+template <int dim>
 void NavierStokes<dim>::set_stabilization_options(
   const StabilizationOptions &options)
 {
@@ -848,6 +854,7 @@ void NavierStokes<dim>::solve()
     required_matrices.B = &system_matrix.block(1, 0);
     required_matrices.BT = &system_matrix.block(0, 1);
     required_matrices.solution_template = &solution_owned;
+    required_matrices.simple_pressure_relaxation = simple_pressure_relaxation;
 
     pcout << "  Building preconditioner = "
           << to_string(preconditioner_kind) << std::endl;
@@ -941,6 +948,9 @@ void NavierStokes<dim>::run()
           << std::endl;
     pcout << "   Preconditioner = " << to_string(preconditioner_kind)
           << std::endl;
+    if (preconditioner_kind == PreconditionerKind::Simple)
+        pcout << "   SIMPLE pressure relaxation = "
+              << simple_pressure_relaxation << std::endl;
     pcout << "   Stabilization: Temam = "
           << (stabilization_options.temam ? "on" : "off")
           << ", grad-div = "

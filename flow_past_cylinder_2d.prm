@@ -1,5 +1,5 @@
 subsection Mesh and discretization
-  set Mesh file = ../mesh/navierstokes_L0.msh
+  set Mesh file = ../mesh/navierstokes_L1.msh
   set Velocity degree = 2
   set Pressure degree = 1
   set Final time = 7
@@ -17,7 +17,8 @@ subsection Solver
   set Linear max iterations = 10000
   set Linear relative tolerance = 1e-6
   set Linear absolute tolerance = 1e-10
-  set Preconditioner = pcd
+  set Preconditioner = simple
+  set SIMPLE pressure relaxation = 0.7
 end
 
 subsection Stabilization
@@ -29,7 +30,7 @@ subsection Stabilization
 end
 
 subsection Physics
-  set Viscosity = 0.001 
+  set Viscosity = 0.0005 
   set Inlet velocity = 1.5
   set Inlet channel height = 0.41
   set Inlet ramp time = 8.0

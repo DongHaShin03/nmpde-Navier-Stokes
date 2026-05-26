@@ -27,6 +27,7 @@ struct FlowPastCylinder2DConfig
     double linear_relative_tolerance = 1e-6;
     double linear_absolute_tolerance = 1e-10;
     PreconditionerKind preconditioner = PreconditionerKind::PCD;
+    double simple_pressure_relaxation = 0.7;
 
     StabilizationOptions stabilization = {true, true, 0.01, true, false};
 
