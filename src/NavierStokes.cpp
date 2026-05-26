@@ -492,7 +492,7 @@ void NavierStokes<dim>::assemble_timestep(
     FEValuesExtractors::Scalar pressure(dim);
 
     // old_solution is u^n; beta_solution is the convective field beta.
-    // In the current Oseen mode beta_solution == old_solution.
+    // Oseen uses beta = u^n, while Picard uses beta = u^k.
     std::vector<Tensor<1, dim>> previous_velocity_values(n_q);
     std::vector<Tensor<2, dim>> previous_velocity_gradients(n_q);
     std::vector<double> previous_velocity_divergences(n_q);
@@ -957,21 +957,11 @@ void NavierStokes<dim>::run()
           << (stabilization_options.grad_div ? "on" : "off")
           << " (gamma = " << stabilization_options.gamma_grad_div << ")"
           << ", SUPG = " << (stabilization_options.supg ? "on" : "off")
-          << ", PSPG = " << (stabilization_options.pspg ? "on" : "off")
           << std::endl;
     pcout << "   Linear max iters = " << linear_max_iterations
           << ", rel tol = " << linear_relative_tolerance
           << ", abs tol = " << linear_absolute_tolerance << std::endl;
     pcout << "===============================================" << std::endl;
-
-    if (nonlinear_method != NonlinearMethod::None)
-        pcout << "   Warning: nonlinear strategies are parsed but the nonlinear "
-                 "iteration loop is not implemented yet."
-              << std::endl;
-    if (stabilization_options.pspg)
-        pcout << "   Warning: PSPG option is parsed but its assembly is "
-                 "not implemented yet."
-              << std::endl;
 
     setup();
 
@@ -1007,11 +997,91 @@ void NavierStokes<dim>::run()
 
         old_solution = solution;
 
-        assemble_timestep(old_solution);
+        if (nonlinear_method == NonlinearMethod::Oseen)
+        {
+            // One Oseen linearization per timestep:
+            // beta = u^n in the convective terms.
+            assemble_timestep(old_solution);
+            solve();
+            solution = solution_owned;
+        }
+        else
+        {
+            const double relaxation =
+              (nonlinear_method == NonlinearMethod::PicardRelaxed ?
+                 picard_relaxation :
+                 1.0);
 
-        solve();
+            TrilinosWrappers::MPI::BlockVector beta_solution_owned;
+            beta_solution_owned.reinit(block_owned_dofs, MPI_COMM_WORLD);
+            beta_solution_owned = solution_owned;
 
-        solution = solution_owned;
+            TrilinosWrappers::MPI::BlockVector beta_solution;
+            beta_solution.reinit(block_owned_dofs,
+                                 block_relevant_dofs,
+                                 MPI_COMM_WORLD);
+            beta_solution = beta_solution_owned;
+
+            bool converged = false;
+            double last_update = 0.0;
+
+            for (unsigned int nonlinear_iteration = 0;
+                 nonlinear_iteration < nonlinear_max_iterations;
+                 ++nonlinear_iteration)
+            {
+                pcout << "  Picard iteration "
+                      << (nonlinear_iteration + 1) << " / "
+                      << nonlinear_max_iterations
+                      << ", relaxation = " << relaxation << std::endl;
+
+                // Picard/Oseen linearization:
+                // beta = u^k in the convective terms.
+                assemble_timestep(beta_solution);
+
+                // Use the current Picard iterate as linear initial guess.
+                solution = beta_solution;
+                solve();
+
+                TrilinosWrappers::MPI::Vector velocity_update;
+                velocity_update.reinit(solution_owned.block(0));
+                velocity_update = solution_owned.block(0);
+                velocity_update -= beta_solution_owned.block(0);
+
+                last_update =
+                  velocity_update.l2_norm() /
+                  std::max(1.0, solution_owned.block(0).l2_norm());
+
+                pcout << "    Picard velocity relative update = "
+                      << std::scientific << last_update
+                      << std::defaultfloat << std::endl;
+
+                if (last_update < nonlinear_tolerance)
+                {
+                    converged = true;
+                    break;
+                }
+
+                if (relaxation < 1.0)
+                {
+                    TrilinosWrappers::MPI::BlockVector relaxed_solution;
+                    relaxed_solution.reinit(block_owned_dofs, MPI_COMM_WORLD);
+                    relaxed_solution = beta_solution_owned;
+                    relaxed_solution *= (1.0 - relaxation);
+                    relaxed_solution.add(relaxation, solution_owned);
+                    solution_owned = relaxed_solution;
+                }
+
+                beta_solution_owned = solution_owned;
+                beta_solution = beta_solution_owned;
+            }
+
+            if (!converged)
+                pcout << "  Picard reached max iterations with relative update = "
+                      << std::scientific << last_update
+                      << std::defaultfloat << std::endl;
+
+            solution = solution_owned;
+        }
 
         //forces (drag / lift)
         if (mpi_rank == 0 && timestep_number == 1)

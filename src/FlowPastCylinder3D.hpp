@@ -16,7 +16,7 @@ struct FlowPastCylinder3DConfig
     double theta = 0.6;
     double delta_t = 0.05;
 
-    NonlinearMethod nonlinear_method = NonlinearMethod::None;
+    NonlinearMethod nonlinear_method = NonlinearMethod::Oseen;
     unsigned int nonlinear_max_iterations = 2;
     double nonlinear_tolerance = 1e-6;
     double picard_relaxation = 1.0;
@@ -29,7 +29,7 @@ struct FlowPastCylinder3DConfig
     PreconditionerKind preconditioner = PreconditionerKind::PCD;
     double simple_pressure_relaxation = 0.7;
 
-    StabilizationOptions stabilization = {true, true, 0.01, true, false};
+    StabilizationOptions stabilization = {true, true, 0.01, true};
 
     double inlet_velocity = 2.25;
     double inlet_channel_height = 0.41;

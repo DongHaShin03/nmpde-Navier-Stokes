@@ -19,9 +19,9 @@ void FlowPastCylinder2DParser::declare_parameters(ParameterHandler &prm)
 
     prm.enter_subsection("Solver");
     prm.declare_entry("Nonlinear method",
-                      "none",
+                      "oseen",
                       Patterns::Selection(
-                        "none|picard|picard_relaxed|newton|newton_damped"));
+                        "oseen|none|picard|picard_relaxed"));
     prm.declare_entry("Nonlinear iterations", "2", Patterns::Integer(1));
     prm.declare_entry("Nonlinear tolerance", "1e-6", Patterns::Double(0.0));
     prm.declare_entry("Picard relaxation", "1.0", Patterns::Double(0.0, 1.0));
@@ -44,7 +44,6 @@ void FlowPastCylinder2DParser::declare_parameters(ParameterHandler &prm)
     prm.declare_entry("Grad-div", "true", Patterns::Bool());
     prm.declare_entry("Grad-div coefficient", "0.01", Patterns::Double(0.0));
     prm.declare_entry("SUPG", "true", Patterns::Bool());
-    prm.declare_entry("PSPG", "false", Patterns::Bool());
     prm.leave_subsection();
 
     prm.enter_subsection("Physics");
@@ -110,7 +109,6 @@ FlowPastCylinder2DConfig FlowPastCylinder2DParser::parse_parameters(
     config.stabilization.gamma_grad_div =
       prm.get_double("Grad-div coefficient");
     config.stabilization.supg = prm.get_bool("SUPG");
-    config.stabilization.pspg = prm.get_bool("PSPG");
     prm.leave_subsection();
 
     prm.enter_subsection("Physics");

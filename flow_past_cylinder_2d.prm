@@ -8,16 +8,16 @@ subsection Mesh and discretization
 end
 
 subsection Solver
-  set Nonlinear method = none
+  set Nonlinear method = picard_relaxed
   set Nonlinear iterations = 2
   set Nonlinear tolerance = 1e-6
-  set Picard relaxation = 1.0
+  set Picard relaxation = 0.7
   set GMRES restart length = 300
   set Pressure regularization = 0.0
   set Linear max iterations = 10000
   set Linear relative tolerance = 1e-6
   set Linear absolute tolerance = 1e-10
-  set Preconditioner = block_triangular
+  set Preconditioner = pcd
   set SIMPLE pressure relaxation = 0.7
 end
 
@@ -26,7 +26,6 @@ subsection Stabilization
   set Grad-div = true
   set Grad-div coefficient = 0.01
   set SUPG = true
-  set PSPG = false
 end
 
 subsection Physics

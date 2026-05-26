@@ -9,7 +9,7 @@ subsection Mesh and discretization
 end
 
 subsection Solver
-  set Nonlinear method = none
+  set Nonlinear method = oseen
   set Nonlinear iterations = 2
   set Nonlinear tolerance = 1e-6
   set Picard relaxation = 1.0
@@ -27,7 +27,6 @@ subsection Stabilization
   set Grad-div = true
   set Grad-div coefficient = 0.01
   set SUPG = true
-  set PSPG = false
 end
 
 subsection Physics

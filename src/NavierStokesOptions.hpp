@@ -21,29 +21,23 @@ inline std::string normalize_option(std::string value)
 
 enum class NonlinearMethod
 {
-    // ----- QUI AGGIUNGERE METODI NON LINEARI -----
-    // Se nasce un nuovo metodo, aggiungerlo qui, nel parser sotto e nel .prm.
-    // Dopo il cambio, NavierStokes::run() deve avere un ramo dedicato nel loop.
-    None,
+    // One Oseen linearization per time step: beta = u^n.
+    Oseen,
+    // Picard fixed-point iterations per time step: beta = u^{k}.
     Picard,
-    PicardRelaxed,
-    Newton,
-    NewtonDamped
+    // Relaxed Picard: u^{k+1} <- (1-alpha)u^k + alpha*u_raw.
+    PicardRelaxed
 };
 
 inline NonlinearMethod parse_nonlinear_method(const std::string &value)
 {
     const std::string key = normalize_option(value);
-    if (key == "none")
-        return NonlinearMethod::None;
+    if (key == "none" || key == "oseen")
+        return NonlinearMethod::Oseen;
     if (key == "picard")
         return NonlinearMethod::Picard;
     if (key == "picard_relaxed")
         return NonlinearMethod::PicardRelaxed;
-    if (key == "newton")
-        return NonlinearMethod::Newton;
-    if (key == "newton_damped")
-        return NonlinearMethod::NewtonDamped;
 
     throw std::invalid_argument("Unknown nonlinear method: " + value);
 }
@@ -52,16 +46,12 @@ inline const char *to_string(const NonlinearMethod method)
 {
     switch (method)
     {
-        case NonlinearMethod::None:
-            return "none";
+        case NonlinearMethod::Oseen:
+            return "oseen";
         case NonlinearMethod::Picard:
             return "picard";
         case NonlinearMethod::PicardRelaxed:
             return "picard_relaxed";
-        case NonlinearMethod::Newton:
-            return "newton";
-        case NonlinearMethod::NewtonDamped:
-            return "newton_damped";
     }
 
     return "unknown";
@@ -118,7 +108,6 @@ struct StabilizationOptions
     bool grad_div = false;
     double gamma_grad_div = 0.0;
     bool supg = false;
-    bool pspg = false;
 };
 
 #endif

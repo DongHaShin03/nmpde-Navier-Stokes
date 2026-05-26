@@ -162,7 +162,7 @@ class NavierStokes
         //unused
         unsigned int nonlinear_max_iterations = 4;
         double nonlinear_tolerance = 1e-6;
-        NonlinearMethod nonlinear_method = NonlinearMethod::None;
+        NonlinearMethod nonlinear_method = NonlinearMethod::Oseen;
         double picard_relaxation = 1.0;
 
         PreconditionerKind preconditioner_kind = PreconditionerKind::Yosida;
