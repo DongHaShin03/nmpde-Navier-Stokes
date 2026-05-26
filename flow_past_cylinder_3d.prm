@@ -1,0 +1,52 @@
+subsection Mesh and discretization
+  set Dimension = 3
+  set Mesh file = ../mesh/navierstokes3D_L1.msh
+  set Velocity degree = 2
+  set Pressure degree = 1
+  set Final time = 7
+  set Theta = 0.6
+  set Time step = 0.1
+end
+
+subsection Solver
+  set Nonlinear method = none
+  set Nonlinear iterations = 2
+  set Nonlinear tolerance = 1e-6
+  set Picard relaxation = 1.0
+  set GMRES restart length = 300
+  set Pressure regularization = 0.0
+  set Linear max iterations = 10000
+  set Linear relative tolerance = 1e-6
+  set Linear absolute tolerance = 1e-10
+  set Preconditioner = pcd
+end
+
+subsection Stabilization
+  set Temam = true
+  set Grad-div = true
+  set Grad-div coefficient = 0.01
+  set SUPG = true
+  set PSPG = false
+end
+
+subsection Physics
+  set Viscosity = 0.001
+  set Inlet velocity = 2.25
+  set Inlet channel height = 0.41
+  set Inlet channel width = 0.41
+  set Inlet ramp time = 8.0
+  set Outlet pressure = 0.0
+end
+
+subsection Force coefficients
+  set Reference velocity = 1.0
+  set Reference length = 0.1
+  set Reference span = 0.41
+end
+
+subsection Boundary ids
+  set Inlet = 1
+  set Outlet = 2
+  set Walls = 3
+  set Cylinder = 5
+end

@@ -28,10 +28,10 @@ DefineConstant[
 
   // Base sizes for level 0. These match the 2D refined-wake file.
   // Higher levels multiply these values by 1/2, 1/4, 1/8.
-  h_far_base      = {0.055,  Min 0.005,  Max 0.50,  Step 0.001,  Name "Mesh/Far-field size"},
-  h_wall_base     = {0.025,  Min 0.002,  Max 0.20,  Step 0.001,  Name "Mesh/Wall-band size"},
-  h_wake_base     = {0.012,  Min 0.001,  Max 0.10,  Step 0.001,  Name "Mesh/Wake size"},
-  h_cylinder_base = {0.0045, Min 0.0005, Max 0.05,  Step 0.0005, Name "Mesh/Cylinder size"},
+  h_far_base      = {0.15,  Min 0.005,  Max 0.50,  Step 0.001,  Name "Mesh/Far-field size"},
+  h_wall_base     = {0.08,  Min 0.002,  Max 0.20,  Step 0.001,  Name "Mesh/Wall-band size"},
+  h_wake_base     = {0.035,  Min 0.001,  Max 0.10,  Step 0.001,  Name "Mesh/Wake size"},
+  h_cylinder_base = {0.015, Min 0.0005, Max 0.05,  Step 0.0005, Name "Mesh/Cylinder size"},
 
   // Refinement-region dimensions.
   cylinder_band     = {0.12,  Min 0.02, Max 0.50,  Step 0.01,  Name "Mesh/Cylinder refinement band"},
