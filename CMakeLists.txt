@@ -8,6 +8,7 @@ set(NAVIER_STOKES_SOURCES
   src/NavierStokes2D.cpp
   src/NavierStokes3D.cpp
   src/FlowPastCylinder2D.cpp
+  src/FlowPastCylinder3D.cpp
 )
 
 add_executable(main src/main.cpp ${NAVIER_STOKES_SOURCES})
@@ -24,7 +25,9 @@ if(CMAKE_GENERATOR MATCHES "Makefiles")
     "${CMAKE_BINARY_DIR}/compile_commands.json"
     "${CMAKE_BINARY_DIR}/main"
     "${CMAKE_BINARY_DIR}/results"
+    "${CMAKE_BINARY_DIR}/results_3d"
     "${CMAKE_BINARY_DIR}/coefficients.txt"
+    "${CMAKE_BINARY_DIR}/coefficients_3d.txt"
     "${CMAKE_BINARY_DIR}/solution.pvd"
   )
 endif()

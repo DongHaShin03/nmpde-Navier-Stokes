@@ -21,23 +21,34 @@ class PCD : public NavierStokesPreconditioner
             // Safety checks
             if (data.velocity_stiffness == nullptr ||
                 data.pressure_mass == nullptr ||
-                data.pressure_laplacian_discrete == nullptr ||
+                (data.pressure_laplacian_discrete == nullptr &&
+                 data.pressure_laplacian == nullptr) ||
                 data.pressure_convection_diffusion == nullptr ||
                 data.BT == nullptr)
                 throw std::runtime_error(
-                  "PCD preconditioner requires F, B^T, M_p, A_p^disc and F_p.");
+                  "PCD preconditioner requires F, B^T, M_p, A_p or A_p^disc, and F_p.");
 
             
             F = data.velocity_stiffness;
             B_T = data.BT;
             M_p = data.pressure_mass;
-            A_p = data.pressure_laplacian_discrete;
+            // Standard PCD uses the continuous pressure Laplacian. The
+            // discrete Laplacian remains available as a backup/experiment,
+            // but it is more sensitive to mesh quality and ILU robustness.
+            A_p = (data.pressure_laplacian != nullptr ?
+                     data.pressure_laplacian :
+                     data.pressure_laplacian_discrete);
+            A_p_fallback = (data.pressure_laplacian != nullptr ?
+                              data.pressure_laplacian_discrete :
+                              nullptr);
             F_p = data.pressure_convection_diffusion;
             
             // ILU approximations of the inverses of F, M_p and A_p
             preconditioner_F.initialize(*F);
             preconditioner_Mp.initialize(*M_p);
             preconditioner_Ap.initialize(*A_p);
+            if (A_p_fallback != nullptr)
+                preconditioner_Ap_fallback.initialize(*A_p_fallback);
         }
 
         void vmult(TrilinosWrappers::MPI::BlockVector       &dst,
@@ -89,13 +100,21 @@ class PCD : public NavierStokesPreconditioner
             F_p->vmult(fp_times_mp_inverse_rhs, mp_inverse_rhs);
 
             // Step 1.3: p ~= A_p^{-1} z2
-            solve(*A_p,
-                  pressure_part,
-                  fp_times_mp_inverse_rhs,
-                  preconditioner_Ap,
-                  250,
-                  1e-3,
-                  1e-12);
+            if (!solve(*A_p,
+                       pressure_part,
+                       fp_times_mp_inverse_rhs,
+                       preconditioner_Ap,
+                       250,
+                       1e-3,
+                       1e-12) &&
+                A_p_fallback != nullptr)
+                solve(*A_p_fallback,
+                      pressure_part,
+                      fp_times_mp_inverse_rhs,
+                      preconditioner_Ap_fallback,
+                      250,
+                      1e-3,
+                      1e-12);
 
             // Step 2: r_u = r_u + B^T p.
             B_T->vmult(bt_pressure, pressure_part);
@@ -116,7 +135,7 @@ class PCD : public NavierStokesPreconditioner
         }
 
     private:
-        void solve(
+        bool solve(
           const TrilinosWrappers::SparseMatrix      &matrix,
           TrilinosWrappers::MPI::Vector             &solution,
           const TrilinosWrappers::MPI::Vector       &rhs,
@@ -129,26 +148,35 @@ class PCD : public NavierStokesPreconditioner
             solution = 0.0;
 
             if (rhs_norm == 0.0)
-                return;
+                return true;
 
             SolverControl solver_control(
               max_iterations,
               std::max(absolute_tolerance, relative_tolerance * rhs_norm));
             SolverGMRES<TrilinosWrappers::MPI::Vector> solver(solver_control);
 
-            solver.solve(matrix, solution, rhs, preconditioner);
-           
+            try
+            {
+                solver.solve(matrix, solution, rhs, preconditioner);
+                return true;
+            }
+            catch (const SolverControl::NoConvergence &)
+            {
+                return false;
+            }
         }
 
         const TrilinosWrappers::SparseMatrix *F = nullptr;
         const TrilinosWrappers::SparseMatrix *B_T = nullptr;
         const TrilinosWrappers::SparseMatrix *M_p = nullptr;
         const TrilinosWrappers::SparseMatrix *A_p = nullptr;
+        const TrilinosWrappers::SparseMatrix *A_p_fallback = nullptr;
         const TrilinosWrappers::SparseMatrix *F_p = nullptr;
 
         TrilinosWrappers::PreconditionILU preconditioner_F;
         TrilinosWrappers::PreconditionILU preconditioner_Mp;
         TrilinosWrappers::PreconditionILU preconditioner_Ap;
+        TrilinosWrappers::PreconditionILU preconditioner_Ap_fallback;
 };
 
 #endif

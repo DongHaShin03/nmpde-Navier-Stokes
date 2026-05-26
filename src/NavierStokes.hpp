@@ -135,6 +135,9 @@ class NavierStokes
         // M_p = (psi_j, psi_i)
         TrilinosWrappers::BlockSparseMatrix pressure_mass;
 
+        // A_p = (grad psi_j, grad psi_i), used as a PCD fallback.
+        TrilinosWrappers::BlockSparseMatrix pressure_laplacian;
+
         // A_p^disc ~= B diag(M_u)^{-1} B^T
         TrilinosWrappers::BlockSparseMatrix pressure_laplacian_discrete;
 

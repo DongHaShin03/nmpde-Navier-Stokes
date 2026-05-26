@@ -34,6 +34,9 @@ struct RequiredMatrices
     // F_p = scalar pressure convection-diffusion operator built with beta.
     const TrilinosWrappers::SparseMatrix *pressure_convection_diffusion = nullptr;
 
+    // Continuous A_p = (grad psi_j, grad psi_i), used as a PCD fallback.
+    const TrilinosWrappers::SparseMatrix *pressure_laplacian = nullptr;
+
     // PCD pressure Laplacian A_p^disc ~= B diag(M_u)^(-1) B^T.
     const TrilinosWrappers::SparseMatrix *pressure_laplacian_discrete = nullptr;
 };
