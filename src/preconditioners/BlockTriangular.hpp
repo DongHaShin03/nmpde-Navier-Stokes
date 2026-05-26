@@ -3,45 +3,136 @@
 
 #include "NavierStokesPreconditioner.hpp"
 
+#include <algorithm>
+#include <cmath>
+#include <stdexcept>
+
 class BlockTriangular : public NavierStokesPreconditioner
 {
     public:
 
-        AssemblyFlags get_needed_matrices() const override {return {false, true};}
+        AssemblyFlags get_needed_matrices() const override
+        {
+            // M_p is used only as a tiny pressure-space shift for the Schur
+            // approximation S ~= B diag(F)^{-1} B^T.
+            return {false, true};
+        }
         void initialize(const RequiredMatrices &data) override
         {
-            velocity_stiffness = data.velocity_stiffness;
-            pressure_mass      = data.pressure_mass;
-            B                  = data.B;
+            if (data.velocity_stiffness == nullptr || data.pressure_mass == nullptr ||
+                data.B == nullptr || data.BT == nullptr ||
+                data.solution_template == nullptr)
+                throw std::runtime_error(
+                  "BlockTriangular preconditioner requires F, B, B^T, M_p and a solution template.");
 
-            preconditioner_velocity.initialize(*velocity_stiffness);
-            preconditioner_pressure.initialize(*pressure_mass);
+            F   = data.velocity_stiffness;
+            M_p = data.pressure_mass;
+            B   = data.B;
+            B_T = data.BT;
+
+            diag_F_inv.reinit(data.solution_template->block(0));
+            neg_diag_F_inv.reinit(data.solution_template->block(0));
+
+            // D^{-1}, where D = diag(F)
+            for (const auto i : diag_F_inv.locally_owned_elements())
+            {
+                const double d = F->diag_element(i);
+                diag_F_inv[i] =
+                  (std::abs(d) > 1e-30 ? 1.0 / d : 0.0);
+                neg_diag_F_inv[i] = -diag_F_inv[i];
+            }
+            diag_F_inv.compress(VectorOperation::insert);
+            neg_diag_F_inv.compress(VectorOperation::insert);
+
+            B->mmult(schur_approximation, *B_T, neg_diag_F_inv);
+            schur_approximation.add(1e-8, *M_p);
+            schur_approximation.compress(VectorOperation::add);
+
+            preconditioner_F.initialize(*F);
+            preconditioner_S.initialize(schur_approximation);
         }
 
         void vmult(TrilinosWrappers::MPI::BlockVector &dst, const TrilinosWrappers::MPI::BlockVector &src) const override
         {
-            SolverControl solver_control_velocity(1000, 1e-2 * src.block(0).l2_norm());
-            SolverGMRES<TrilinosWrappers::MPI::Vector> solver_gmres_velocity(solver_control_velocity);
-            solver_gmres_velocity.solve(*velocity_stiffness, dst.block(0), src.block(0), preconditioner_velocity);
+            TrilinosWrappers::MPI::Vector pressure_part;
+            pressure_part.reinit(src.block(1));
+            TrilinosWrappers::MPI::Vector minus_bt_pressure;
+            minus_bt_pressure.reinit(src.block(0));
+            TrilinosWrappers::MPI::Vector velocity_rhs;
+            velocity_rhs.reinit(src.block(0));
+            TrilinosWrappers::MPI::Vector velocity_part;
+            velocity_part.reinit(src.block(0));
 
-            tmp.reinit(src.block(1));
-            B->vmult(tmp, dst.block(0));
-            tmp.sadd(-1.0, src.block(1));
+            // Step 1: z_p ~= S_tilde^{-1} r_p.
+            solve(schur_approximation,
+                  pressure_part,
+                  src.block(1),
+                  preconditioner_S,
+                  250,
+                  1e-3,
+                  1e-12);
 
-            SolverControl solver_control_pressure(1000, 1e-2 * src.block(1).l2_norm());
-            SolverCG<TrilinosWrappers::MPI::Vector> solver_cg_pressure(solver_control_pressure);
-            solver_cg_pressure.solve(*pressure_mass, dst.block(1), tmp, preconditioner_pressure);
+            // Step 2: solve r_u = r_u - B_T z_p.
+            B_T->vmult(minus_bt_pressure, pressure_part);
+            velocity_rhs = src.block(0);
+            velocity_rhs -= minus_bt_pressure;
+
+            // Step 3: z_u = F^{-1} r_u.
+            solve(*F,
+                  velocity_part,
+                  velocity_rhs,
+                  preconditioner_F,
+                  100,
+                  1e-2,
+                  1e-12);
+
+            dst.block(0) = velocity_part;
+            dst.block(1) = pressure_part;
         }
 
     private:
-        const TrilinosWrappers::SparseMatrix *velocity_stiffness;
-        const TrilinosWrappers::SparseMatrix *pressure_mass;
-        const TrilinosWrappers::SparseMatrix *B;
+        bool solve(
+          const TrilinosWrappers::SparseMatrix      &matrix,
+          TrilinosWrappers::MPI::Vector             &solution,
+          const TrilinosWrappers::MPI::Vector       &rhs,
+          const TrilinosWrappers::PreconditionILU   &preconditioner,
+          const unsigned int                         max_iterations,
+          const double                               relative_tolerance,
+          const double                               absolute_tolerance) const
+        {
+            const double rhs_norm = rhs.l2_norm();
+            solution = 0.0;
 
-        TrilinosWrappers::PreconditionILU preconditioner_velocity;
-        TrilinosWrappers::PreconditionILU preconditioner_pressure;
+            if (rhs_norm == 0.0)
+                return true;
 
-        mutable TrilinosWrappers::MPI::Vector tmp;
+            SolverControl solver_control(
+              max_iterations,
+              std::max(absolute_tolerance, relative_tolerance * rhs_norm));
+            SolverGMRES<TrilinosWrappers::MPI::Vector> solver(solver_control);
+
+            try
+            {
+                solver.solve(matrix, solution, rhs, preconditioner);
+                return true;
+            }
+            catch (const SolverControl::NoConvergence &)
+            {
+                return false;
+            }
+        }
+
+        const TrilinosWrappers::SparseMatrix *F = nullptr;
+        const TrilinosWrappers::SparseMatrix *M_p = nullptr;
+        const TrilinosWrappers::SparseMatrix *B = nullptr;
+        const TrilinosWrappers::SparseMatrix *B_T = nullptr;
+
+        TrilinosWrappers::SparseMatrix schur_approximation;
+        TrilinosWrappers::MPI::Vector diag_F_inv;
+        TrilinosWrappers::MPI::Vector neg_diag_F_inv;
+
+        TrilinosWrappers::PreconditionILU preconditioner_F;
+        TrilinosWrappers::PreconditionILU preconditioner_S;
 };
 
 #endif
