@@ -29,7 +29,7 @@ subsection Stabilization
 end
 
 subsection Physics
-  set Viscosity = 0.0005 
+  set Viscosity = 0.0005
   set Inlet velocity = 1.5
   set Inlet channel height = 0.41
   set Inlet ramp time = 8.0
