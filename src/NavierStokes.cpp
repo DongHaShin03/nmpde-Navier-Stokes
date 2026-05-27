@@ -803,7 +803,7 @@ void NavierStokes<dim>::solve()
     pcout << "  RHS norm = " << rhs_norm
           << ", tol = " << linear_tolerance
           << ", max iters = " << linear_max_iterations
-          << ", GMRES restart = " << gmres_restart_length << std::endl;
+          << ", FGMRES restart = " << gmres_restart_length << std::endl;
 
     //initial guess: sol from previous timestep
     solution_owned = solution;
