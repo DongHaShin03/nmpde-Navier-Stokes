@@ -29,6 +29,8 @@ class BlockTriangular : public NavierStokesPreconditioner
             M_p = data.pressure_mass;
             B   = data.B;
             B_T = data.BT;
+            velocity_max_iterations =data.preconditioner_iterations.block_triangular_velocity_max_iterations;
+            schur_max_iterations =data.preconditioner_iterations.block_triangular_schur_max_iterations;
 
             diag_F_inv.reinit(data.solution_template->block(0));
             neg_diag_F_inv.reinit(data.solution_template->block(0));
@@ -64,13 +66,16 @@ class BlockTriangular : public NavierStokesPreconditioner
             velocity_part.reinit(src.block(0));
 
             // Step 1: z_p ~= S_tilde^{-1} r_p.
-            solve(schur_approximation,
-                  pressure_part,
-                  src.block(1),
-                  preconditioner_S,
-                  250,
-                  1e-3,
-                  1e-12);
+            time_section("block_triangular_vmult/schur_solve", [&]()
+            {
+                solve(schur_approximation,
+                      pressure_part,
+                      src.block(1),
+                      preconditioner_S,
+                      schur_max_iterations,
+                      1e-3,
+                      1e-12);
+            });
 
             // Step 2: solve r_u = r_u - B_T z_p.
             B_T->vmult(minus_bt_pressure, pressure_part);
@@ -78,13 +83,16 @@ class BlockTriangular : public NavierStokesPreconditioner
             velocity_rhs -= minus_bt_pressure;
 
             // Step 3: z_u = F^{-1} r_u.
-            solve(*F,
-                  velocity_part,
-                  velocity_rhs,
-                  preconditioner_F,
-                  100,
-                  1e-2,
-                  1e-12);
+            time_section("block_triangular_vmult/f_solve", [&]()
+            {
+                solve(*F,
+                      velocity_part,
+                      velocity_rhs,
+                      preconditioner_F,
+                      velocity_max_iterations,
+                      1e-2,
+                      1e-12);
+            });
 
             dst.block(0) = velocity_part;
             dst.block(1) = pressure_part;
@@ -133,6 +141,8 @@ class BlockTriangular : public NavierStokesPreconditioner
 
         TrilinosWrappers::PreconditionILU preconditioner_F;
         TrilinosWrappers::PreconditionILU preconditioner_S;
+        unsigned int velocity_max_iterations = 100;
+        unsigned int schur_max_iterations = 250;
 };
 
 #endif

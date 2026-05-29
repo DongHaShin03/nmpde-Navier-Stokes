@@ -27,6 +27,9 @@ class Yosida : public NavierStokesPreconditioner
             B = data.B;
             B_T = data.BT;         
             M = data.velocity_mass;
+            velocity_max_iterations = data.preconditioner_iterations.yosida_velocity_max_iterations;
+            schur_max_iterations = data.preconditioner_iterations.yosida_schur_max_iterations;
+            correction_max_iterations = data.preconditioner_iterations.yosida_correction_max_iterations;
                                                 
 
             diag_D_inv.reinit(data.solution_template->block(0));
@@ -51,7 +54,6 @@ class Yosida : public NavierStokesPreconditioner
         void vmult(TrilinosWrappers::MPI::BlockVector       &dst,
                    const TrilinosWrappers::MPI::BlockVector &src) const override
         {
-            const unsigned int maxiter = 100000;
             const double relative_tolerance = 1e-2;
 
             TrilinosWrappers::MPI::Vector yu;
@@ -65,27 +67,33 @@ class Yosida : public NavierStokesPreconditioner
             TrilinosWrappers::MPI::Vector correction_u;
             correction_u.reinit(src.block(0));
 
-            SolverControl solver_F(maxiter,
+            SolverControl solver_F(velocity_max_iterations,
                                    std::max(1e-14,
                                             relative_tolerance *
                                               src.block(0).l2_norm()));
             SolverGMRES<TrilinosWrappers::MPI::Vector> solver_gmres(solver_F);
             
             // Step 1: y_u ~= F^{-1} r_u.
-            solver_gmres.solve(*F, yu, src.block(0), preconditioner_F);
+            time_section("yosida_vmult/f_solve", [&]()
+            {
+                solver_gmres.solve(*F, yu, src.block(0), preconditioner_F);
+            });
 
             // Step 2: r_p = r_p - B y_u.
             B->vmult(tmp_p, yu);
             tmp_p *= -1.0;
             tmp_p += src.block(1);
 
-            SolverControl solver_S(maxiter,
+            SolverControl solver_S(schur_max_iterations,
                                    std::max(1e-14,
                                             relative_tolerance * tmp_p.l2_norm()));
             SolverGMRES<TrilinosWrappers::MPI::Vector> solver_gmres_S(solver_S);
 
             // Step 2: y_p ~= S_Y^(-1) r_p.
-            solver_gmres_S.solve(negative_S_tilde, yp, tmp_p, preconditioner_S);
+            time_section("yosida_vmult/schur_solve", [&]()
+            {
+                solver_gmres_S.solve(negative_S_tilde, yp, tmp_p, preconditioner_S);
+            });
 
             dst.block(1) = yp;
 
@@ -93,13 +101,16 @@ class Yosida : public NavierStokesPreconditioner
             // Correction RHS in velocity space: stored B_T is -B^T.
             B_T->vmult(tmp_u, dst.block(1));
 
-            SolverControl solver_F2(maxiter,
+            SolverControl solver_F2(correction_max_iterations,
                                     std::max(1e-14,
                                              relative_tolerance *
                                                tmp_u.l2_norm()));
             SolverGMRES<TrilinosWrappers::MPI::Vector> solver_gmres2(solver_F2);
             
-            solver_gmres2.solve(*F, correction_u, tmp_u, preconditioner_F);
+            time_section("yosida_vmult/f_correction_solve", [&]()
+            {
+                solver_gmres2.solve(*F, correction_u, tmp_u, preconditioner_F);
+            });
 
             // Final block-triangular Yosida application:
             // y_u - correction_u, y_p.
@@ -119,6 +130,10 @@ class Yosida : public NavierStokesPreconditioner
 
         TrilinosWrappers::PreconditionILU preconditioner_F;
         TrilinosWrappers::PreconditionILU preconditioner_S;
+
+        unsigned int velocity_max_iterations = 100000;
+        unsigned int schur_max_iterations = 100000;
+        unsigned int correction_max_iterations = 100000;
 };
 
 #endif

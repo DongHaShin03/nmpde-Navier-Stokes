@@ -33,10 +33,19 @@ void FlowPastCylinder2DParser::declare_parameters(ParameterHandler &prm)
     prm.declare_entry("Preconditioner",
                       "pcd",
                       Patterns::Selection(
-                        "identity|simple|block_triangular|yosida|pcd"));
+                        "simple|block_triangular|yosida|pcd"));
     prm.declare_entry("SIMPLE pressure relaxation",
                       "0.7",
                       Patterns::Double(0.0, 1.0));
+    prm.declare_entry("Block triangular velocity max iterations","100",Patterns::Integer(1));
+    prm.declare_entry("Block triangular Schur max iterations","250",Patterns::Integer(1));
+    prm.declare_entry("SIMPLE velocity max iterations", "5",Patterns::Integer(1));
+    prm.declare_entry("SIMPLE Schur max iterations","20",Patterns::Integer(1));
+    prm.declare_entry("PCD velocity max iterations","10",Patterns::Integer(1));
+    prm.declare_entry("PCD pressure max iterations","20",Patterns::Integer(1));
+    prm.declare_entry("Yosida velocity max iterations","100000",Patterns::Integer(1));
+    prm.declare_entry("Yosida Schur max iterations","100000",Patterns::Integer(1));
+    prm.declare_entry("Yosida correction max iterations","100000",Patterns::Integer(1));
     prm.leave_subsection();
 
     prm.enter_subsection("Stabilization");
@@ -101,6 +110,30 @@ FlowPastCylinder2DConfig FlowPastCylinder2DParser::parse_parameters(
     config.preconditioner = parse_preconditioner_kind(prm.get("Preconditioner"));
     config.simple_pressure_relaxation =
       prm.get_double("SIMPLE pressure relaxation");
+    config.preconditioner_iterations.block_triangular_velocity_max_iterations =
+      static_cast<unsigned int>(
+        prm.get_integer("Block triangular velocity max iterations"));
+    config.preconditioner_iterations.block_triangular_schur_max_iterations =
+      static_cast<unsigned int>(
+        prm.get_integer("Block triangular Schur max iterations"));
+    config.preconditioner_iterations.simple_velocity_max_iterations =
+      static_cast<unsigned int>(
+        prm.get_integer("SIMPLE velocity max iterations"));
+    config.preconditioner_iterations.simple_schur_max_iterations =
+      static_cast<unsigned int>(prm.get_integer("SIMPLE Schur max iterations"));
+    config.preconditioner_iterations.pcd_velocity_max_iterations =
+      static_cast<unsigned int>(prm.get_integer("PCD velocity max iterations"));
+    config.preconditioner_iterations.pcd_pressure_max_iterations =
+      static_cast<unsigned int>(prm.get_integer("PCD pressure max iterations"));
+    config.preconditioner_iterations.yosida_velocity_max_iterations =
+      static_cast<unsigned int>(
+        prm.get_integer("Yosida velocity max iterations"));
+    config.preconditioner_iterations.yosida_schur_max_iterations =
+      static_cast<unsigned int>(
+        prm.get_integer("Yosida Schur max iterations"));
+    config.preconditioner_iterations.yosida_correction_max_iterations =
+      static_cast<unsigned int>(
+        prm.get_integer("Yosida correction max iterations"));
     prm.leave_subsection();
 
     prm.enter_subsection("Stabilization");

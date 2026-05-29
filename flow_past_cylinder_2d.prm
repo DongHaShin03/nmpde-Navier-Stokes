@@ -8,7 +8,7 @@ subsection Mesh and discretization
 end
 
 subsection Solver
-  set Nonlinear method = picard_relaxed
+  set Nonlinear method = simple
   set Nonlinear iterations = 2
   set Nonlinear tolerance = 1e-6
   set Picard relaxation = 0.7
@@ -17,8 +17,17 @@ subsection Solver
   set Linear max iterations = 10000
   set Linear relative tolerance = 1e-6
   set Linear absolute tolerance = 1e-10
-  set Preconditioner = pcd
+  set Preconditioner = block_triangular
   set SIMPLE pressure relaxation = 0.7
+  set Block triangular velocity max iterations = 15
+  set Block triangular Schur max iterations = 20
+  set SIMPLE velocity max iterations = 5
+  set SIMPLE Schur max iterations = 10
+  set PCD velocity max iterations = 10
+  set PCD pressure max iterations = 20
+  set Yosida velocity max iterations = 10000
+  set Yosida Schur max iterations = 10000
+  set Yosida correction max iterations = 10000
 end
 
 subsection Stabilization
@@ -32,7 +41,7 @@ subsection Physics
   set Viscosity = 0.0005
   set Inlet velocity = 1.5
   set Inlet channel height = 0.41
-  set Inlet ramp time = 8.0
+  set Inlet ramp time = 0.0
   set Outlet pressure = 0.0
 end
 

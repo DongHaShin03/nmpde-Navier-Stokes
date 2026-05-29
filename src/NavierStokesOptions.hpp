@@ -59,7 +59,6 @@ inline const char *to_string(const NonlinearMethod method)
 
 enum class PreconditionerKind
 {
-    Identity,
     Simple,
     BlockTriangular,
     Yosida,
@@ -69,8 +68,6 @@ enum class PreconditionerKind
 inline PreconditionerKind parse_preconditioner_kind(const std::string &value)
 {
     const std::string key = normalize_option(value);
-    if (key == "identity")
-        return PreconditionerKind::Identity;
     if (key == "simple")
         return PreconditionerKind::Simple;
     if (key == "block_triangular")
@@ -87,8 +84,6 @@ inline const char *to_string(const PreconditionerKind preconditioner)
 {
     switch (preconditioner)
     {
-        case PreconditionerKind::Identity:
-            return "identity";
         case PreconditionerKind::Simple:
             return "simple";
         case PreconditionerKind::BlockTriangular:

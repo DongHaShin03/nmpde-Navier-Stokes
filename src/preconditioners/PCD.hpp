@@ -21,34 +21,25 @@ class PCD : public NavierStokesPreconditioner
             // Safety checks
             if (data.velocity_stiffness == nullptr ||
                 data.pressure_mass == nullptr ||
-                (data.pressure_laplacian_discrete == nullptr &&
-                 data.pressure_laplacian == nullptr) ||
+                data.pressure_laplacian_discrete == nullptr ||
                 data.pressure_convection_diffusion == nullptr ||
                 data.BT == nullptr)
                 throw std::runtime_error(
-                  "PCD preconditioner requires F, B^T, M_p, A_p or A_p^disc, and F_p.");
+                  "PCD preconditioner requires F, B^T, M_p, A_p^disc, and F_p.");
 
             
             F = data.velocity_stiffness;
             B_T = data.BT;
             M_p = data.pressure_mass;
-            // Standard PCD uses the continuous pressure Laplacian. The
-            // discrete Laplacian remains available as a backup/experiment,
-            // but it is more sensitive to mesh quality and ILU robustness.
-            A_p = (data.pressure_laplacian != nullptr ?
-                     data.pressure_laplacian :
-                     data.pressure_laplacian_discrete);
-            A_p_fallback = (data.pressure_laplacian != nullptr ?
-                              data.pressure_laplacian_discrete :
-                              nullptr);
+            A_p = data.pressure_laplacian_discrete;
             F_p = data.pressure_convection_diffusion;
+            velocity_max_iterations =data.preconditioner_iterations.pcd_velocity_max_iterations;
+            pressure_max_iterations = data.preconditioner_iterations.pcd_pressure_max_iterations;
             
             // ILU approximations of the inverses of F, M_p and A_p
             preconditioner_F.initialize(*F);
             preconditioner_Mp.initialize(*M_p);
             preconditioner_Ap.initialize(*A_p);
-            if (A_p_fallback != nullptr)
-                preconditioner_Ap_fallback.initialize(*A_p_fallback);
         }
 
         void vmult(TrilinosWrappers::MPI::BlockVector       &dst,
@@ -100,21 +91,16 @@ class PCD : public NavierStokesPreconditioner
             F_p->vmult(fp_times_mp_inverse_rhs, mp_inverse_rhs);
 
             // Step 1.3: p ~= A_p^{-1} z2
-            if (!solve(*A_p,
-                       pressure_part,
-                       fp_times_mp_inverse_rhs,
-                       preconditioner_Ap,
-                       250,
-                       1e-3,
-                       1e-12) &&
-                A_p_fallback != nullptr)
-                solve(*A_p_fallback,
+            time_section("pcd_vmult/ap_solve_limited", [&]()
+            {
+                solve(*A_p,
                       pressure_part,
                       fp_times_mp_inverse_rhs,
-                      preconditioner_Ap_fallback,
-                      250,
+                      preconditioner_Ap,
+                      pressure_max_iterations,
                       1e-3,
                       1e-12);
+            });
 
             // Step 2: r_u = r_u + B^T p.
             B_T->vmult(bt_pressure, pressure_part);
@@ -122,13 +108,16 @@ class PCD : public NavierStokesPreconditioner
             corrected_velocity_rhs -= bt_pressure;
 
             // Step 3: Velocity part: u ~= F^{-1} * ru.
-            solve(*F,
-                  velocity_part,
-                  corrected_velocity_rhs,
-                  preconditioner_F,
-                  100,
-                  1e-2,
-                  1e-12);
+            time_section("pcd_vmult/f_solve_limited", [&]()
+            {
+                solve(*F,
+                      velocity_part,
+                      corrected_velocity_rhs,
+                      preconditioner_F,
+                      velocity_max_iterations,
+                      1e-2,
+                      1e-12);
+            });
 
             dst.block(0) = velocity_part;
             dst.block(1) = pressure_part;
@@ -170,13 +159,14 @@ class PCD : public NavierStokesPreconditioner
         const TrilinosWrappers::SparseMatrix *B_T = nullptr;
         const TrilinosWrappers::SparseMatrix *M_p = nullptr;
         const TrilinosWrappers::SparseMatrix *A_p = nullptr;
-        const TrilinosWrappers::SparseMatrix *A_p_fallback = nullptr;
         const TrilinosWrappers::SparseMatrix *F_p = nullptr;
 
         TrilinosWrappers::PreconditionILU preconditioner_F;
         TrilinosWrappers::PreconditionILU preconditioner_Mp;
         TrilinosWrappers::PreconditionILU preconditioner_Ap;
-        TrilinosWrappers::PreconditionILU preconditioner_Ap_fallback;
+
+        unsigned int velocity_max_iterations = 10;
+        unsigned int pressure_max_iterations = 20;
 };
 
 #endif
