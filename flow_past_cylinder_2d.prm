@@ -8,7 +8,7 @@ subsection Mesh and discretization
 end
 
 subsection Solver
-  set Nonlinear method = simple
+  set Nonlinear method = picard_relaxed
   set Nonlinear iterations = 2
   set Nonlinear tolerance = 1e-6
   set Picard relaxation = 0.7
@@ -17,7 +17,7 @@ subsection Solver
   set Linear max iterations = 10000
   set Linear relative tolerance = 1e-6
   set Linear absolute tolerance = 1e-10
-  set Preconditioner = block_triangular
+  set Preconditioner = simple
   set SIMPLE pressure relaxation = 0.7
   set Block triangular velocity max iterations = 15
   set Block triangular Schur max iterations = 20
