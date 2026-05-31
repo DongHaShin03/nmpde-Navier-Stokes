@@ -34,6 +34,9 @@ class Simple : public NavierStokesPreconditioner
               std::min(1.0, std::max(0.0, data.simple_pressure_relaxation));
             velocity_max_iterations = data.preconditioner_iterations.simple_velocity_max_iterations;
             schur_max_iterations = data.preconditioner_iterations.simple_schur_max_iterations;
+            velocity_relative_tolerance =data.preconditioner_iterations.simple_velocity_relative_tolerance;
+            schur_relative_tolerance =data.preconditioner_iterations.simple_schur_relative_tolerance;
+            absolute_tolerance =data.preconditioner_iterations.preconditioner_absolute_tolerance;
 
             diag_F_inv.reinit(data.solution_template->block(0));
             neg_diag_F_inv.reinit(data.solution_template->block(0));
@@ -82,8 +85,8 @@ class Simple : public NavierStokesPreconditioner
                       src.block(0),
                       preconditioner_F,
                       velocity_max_iterations,
-                      1e-2,
-                      1e-12);
+                      velocity_relative_tolerance,
+                      absolute_tolerance);
             });
 
             // Step 2: r_p = r_p - B u_hat.
@@ -100,8 +103,8 @@ class Simple : public NavierStokesPreconditioner
                       pressure_rhs,
                       preconditioner_S,
                       schur_max_iterations,
-                      1e-3,
-                      1e-12);
+                      schur_relative_tolerance,
+                      absolute_tolerance);
             });
             
             // z_p = alpha * z_p, where alpha is the pressure relaxation factor      
@@ -166,6 +169,9 @@ class Simple : public NavierStokesPreconditioner
 
         unsigned int velocity_max_iterations = 5;
         unsigned int schur_max_iterations = 20;
+        double velocity_relative_tolerance = 1e-2;
+        double schur_relative_tolerance = 1e-3;
+        double absolute_tolerance = 1e-12;
 };
 
 #endif

@@ -43,18 +43,36 @@ void FlowPastCylinder3DParser::declare_parameters(ParameterHandler &prm)
     prm.declare_entry("Block triangular Schur max iterations",
                       "250",
                       Patterns::Integer(1));
+    prm.declare_entry("Block triangular velocity relative tolerance",
+                      "1e-2",
+                      Patterns::Double(0.0));
+    prm.declare_entry("Block triangular Schur relative tolerance",
+                      "1e-3",
+                      Patterns::Double(0.0));
     prm.declare_entry("SIMPLE velocity max iterations",
                       "5",
                       Patterns::Integer(1));
     prm.declare_entry("SIMPLE Schur max iterations",
                       "20",
                       Patterns::Integer(1));
+    prm.declare_entry("SIMPLE velocity relative tolerance",
+                      "1e-2",
+                      Patterns::Double(0.0));
+    prm.declare_entry("SIMPLE Schur relative tolerance",
+                      "1e-3",
+                      Patterns::Double(0.0));
     prm.declare_entry("PCD velocity max iterations",
                       "10",
                       Patterns::Integer(1));
     prm.declare_entry("PCD pressure max iterations",
                       "20",
                       Patterns::Integer(1));
+    prm.declare_entry("PCD velocity relative tolerance",
+                      "1e-2",
+                      Patterns::Double(0.0));
+    prm.declare_entry("PCD pressure relative tolerance",
+                      "1e-3",
+                      Patterns::Double(0.0));
     prm.declare_entry("Yosida velocity max iterations",
                       "100000",
                       Patterns::Integer(1));
@@ -64,6 +82,15 @@ void FlowPastCylinder3DParser::declare_parameters(ParameterHandler &prm)
     prm.declare_entry("Yosida correction max iterations",
                       "100000",
                       Patterns::Integer(1));
+    prm.declare_entry("Yosida relative tolerance",
+                      "1e-2",
+                      Patterns::Double(0.0));
+    prm.declare_entry("Preconditioner absolute tolerance",
+                      "1e-12",
+                      Patterns::Double(0.0));
+    prm.declare_entry("Yosida absolute tolerance",
+                      "1e-14",
+                      Patterns::Double(0.0));
     prm.leave_subsection();
 
     prm.enter_subsection("Stabilization");
@@ -136,15 +163,27 @@ FlowPastCylinder3DConfig FlowPastCylinder3DParser::parse_parameters(
     config.preconditioner_iterations.block_triangular_schur_max_iterations =
       static_cast<unsigned int>(
         prm.get_integer("Block triangular Schur max iterations"));
+    config.preconditioner_iterations.block_triangular_velocity_relative_tolerance =
+      prm.get_double("Block triangular velocity relative tolerance");
+    config.preconditioner_iterations.block_triangular_schur_relative_tolerance =
+      prm.get_double("Block triangular Schur relative tolerance");
     config.preconditioner_iterations.simple_velocity_max_iterations =
       static_cast<unsigned int>(
         prm.get_integer("SIMPLE velocity max iterations"));
     config.preconditioner_iterations.simple_schur_max_iterations =
       static_cast<unsigned int>(prm.get_integer("SIMPLE Schur max iterations"));
+    config.preconditioner_iterations.simple_velocity_relative_tolerance =
+      prm.get_double("SIMPLE velocity relative tolerance");
+    config.preconditioner_iterations.simple_schur_relative_tolerance =
+      prm.get_double("SIMPLE Schur relative tolerance");
     config.preconditioner_iterations.pcd_velocity_max_iterations =
       static_cast<unsigned int>(prm.get_integer("PCD velocity max iterations"));
     config.preconditioner_iterations.pcd_pressure_max_iterations =
       static_cast<unsigned int>(prm.get_integer("PCD pressure max iterations"));
+    config.preconditioner_iterations.pcd_velocity_relative_tolerance =
+      prm.get_double("PCD velocity relative tolerance");
+    config.preconditioner_iterations.pcd_pressure_relative_tolerance =
+      prm.get_double("PCD pressure relative tolerance");
     config.preconditioner_iterations.yosida_velocity_max_iterations =
       static_cast<unsigned int>(
         prm.get_integer("Yosida velocity max iterations"));
@@ -154,6 +193,12 @@ FlowPastCylinder3DConfig FlowPastCylinder3DParser::parse_parameters(
     config.preconditioner_iterations.yosida_correction_max_iterations =
       static_cast<unsigned int>(
         prm.get_integer("Yosida correction max iterations"));
+    config.preconditioner_iterations.yosida_relative_tolerance =
+      prm.get_double("Yosida relative tolerance");
+    config.preconditioner_iterations.preconditioner_absolute_tolerance =
+      prm.get_double("Preconditioner absolute tolerance");
+    config.preconditioner_iterations.yosida_absolute_tolerance =
+      prm.get_double("Yosida absolute tolerance");
     prm.leave_subsection();
 
     prm.enter_subsection("Stabilization");
