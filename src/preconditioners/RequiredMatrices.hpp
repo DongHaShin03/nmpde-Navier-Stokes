@@ -8,6 +8,19 @@
 
 using namespace dealii;
 
+struct PreconditionerIterationOptions
+{
+    unsigned int block_triangular_velocity_max_iterations = 100;
+    unsigned int block_triangular_schur_max_iterations = 250;
+    unsigned int simple_velocity_max_iterations = 5;
+    unsigned int simple_schur_max_iterations = 20;
+    unsigned int pcd_velocity_max_iterations = 10;
+    unsigned int pcd_pressure_max_iterations = 20;
+    unsigned int yosida_velocity_max_iterations = 100000;
+    unsigned int yosida_schur_max_iterations = 100000;
+    unsigned int yosida_correction_max_iterations = 100000;
+};
+
 struct RequiredMatrices
 {
     // F block matrix in [F -B^T; B 0] ( + Temam + Grad-div + SUPG if included) 
@@ -32,14 +45,13 @@ struct RequiredMatrices
     // z_p <- alpha z_p, with 0 <= alpha <= 1.
     double simple_pressure_relaxation = 0.7;
 
+    PreconditionerIterationOptions preconditioner_iterations;
+
     
     // --- Pressure-space operators for PCD: ---
 
     // F_p = scalar pressure convection-diffusion operator built with beta.
     const TrilinosWrappers::SparseMatrix *pressure_convection_diffusion = nullptr;
-
-    // Continuous A_p = (grad psi_j, grad psi_i), used as a PCD fallback.
-    const TrilinosWrappers::SparseMatrix *pressure_laplacian = nullptr;
 
     // PCD pressure Laplacian A_p^disc ~= B diag(M_u)^(-1) B^T.
     const TrilinosWrappers::SparseMatrix *pressure_laplacian_discrete = nullptr;

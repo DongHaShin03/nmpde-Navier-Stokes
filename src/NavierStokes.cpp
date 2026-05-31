@@ -80,6 +80,12 @@ void NavierStokes<dim>::set_simple_pressure_relaxation(const double relaxation)
 }
 
 template <int dim>
+void NavierStokes<dim>::set_preconditioner_iterations(const PreconditionerIterationOptions &options)
+{
+    preconditioner_iterations = options;
+}
+
+template <int dim>
 void NavierStokes<dim>::set_stabilization_options(
   const StabilizationOptions &options)
 {
@@ -275,7 +281,6 @@ void NavierStokes<dim>::setup()
             pressure_mass.reinit(sparsity_pressure_mass);
         if (needs_pcd_pressure_operators())
         {
-            pressure_laplacian.reinit(sparsity_pressure_mass);
             pressure_laplacian_discrete.reinit(sparsity_pressure_mass);
             pressure_convection_diffusion.reinit(sparsity_pressure_mass);
         }
@@ -303,7 +308,6 @@ void NavierStokes<dim>::assemble_static()
 
     const bool assemble_velocity_mass = needs_velocity_mass_matrix();
     const bool assemble_pressure_mass = needs_pressure_mass_matrix();
-    const bool assemble_pcd_pressure = needs_pcd_pressure_operators();
 
     const unsigned int dofs_per_cell = fe->dofs_per_cell;
     const unsigned int n_q = quadrature->size();
@@ -316,7 +320,6 @@ void NavierStokes<dim>::assemble_static()
     FullMatrix<double> cell_static(dofs_per_cell, dofs_per_cell);
     FullMatrix<double> cell_velocity_mass(dofs_per_cell, dofs_per_cell);
     FullMatrix<double> cell_pressure_mass(dofs_per_cell, dofs_per_cell);
-    FullMatrix<double> cell_pressure_laplacian(dofs_per_cell, dofs_per_cell);
 
     std::vector<types::global_dof_index> dof_indices(dofs_per_cell);
 
@@ -325,10 +328,6 @@ void NavierStokes<dim>::assemble_static()
         velocity_mass = 0.0;
     if (assemble_pressure_mass)
         pressure_mass = 0.0;
-    if (assemble_pcd_pressure)
-        pressure_laplacian = 0.0;
-
-    constexpr double pressure_laplacian_regularization = 1e-8;
 
     FEValuesExtractors::Vector velocity(0);
     FEValuesExtractors::Scalar pressure(dim);
@@ -345,8 +344,6 @@ void NavierStokes<dim>::assemble_static()
             cell_velocity_mass = 0.0;
         if (assemble_pressure_mass)
             cell_pressure_mass = 0.0;
-        if (assemble_pcd_pressure)
-            cell_pressure_laplacian = 0.0;
 
         for (unsigned int q = 0; q < n_q; ++q)
         {
@@ -356,8 +353,6 @@ void NavierStokes<dim>::assemble_static()
                 const Tensor<2, dim> grad_phi_vel_i = fe_values[velocity].gradient(i, q);
                 const double div_phi_vel_i = fe_values[velocity].divergence(i, q);
                 const double psi_i = fe_values[pressure].value(i, q);
-                const Tensor<1, dim> grad_psi_i =
-                  fe_values[pressure].gradient(i, q);
 
                 // --- LHS contributions ---
                 for (unsigned int j = 0; j < dofs_per_cell; ++j)
@@ -366,8 +361,6 @@ void NavierStokes<dim>::assemble_static()
                     const Tensor<2, dim> grad_phi_vel_j = fe_values[velocity].gradient(j, q);
                     const double div_phi_vel_j = fe_values[velocity].divergence(j, q);
                     const double psi_j = fe_values[pressure].value(j, q);
-                    const Tensor<1, dim> grad_psi_j =
-                      fe_values[pressure].gradient(j, q);
 
                     // Velocity mass in the monolithic F block:
                     // (1/dt) M_u, with (M_u)_{ij} = (phi_j, phi_i)
@@ -410,15 +403,6 @@ void NavierStokes<dim>::assemble_static()
                     if (assemble_pressure_mass)
                         cell_pressure_mass(i, j) +=
                           psi_i * psi_j * fe_values.JxW(q);
-
-                    // Continuous pressure Laplacian for PCD fallback:
-                    // (A_p)_{ij} = (grad(psi_j), grad(psi_i))_Omega
-                    // plus a tiny mass shift to remove the constant nullspace.
-                    if (assemble_pcd_pressure)
-                        cell_pressure_laplacian(i, j) +=
-                          (scalar_product(grad_psi_j, grad_psi_i) +
-                           pressure_laplacian_regularization * psi_j * psi_i) *
-                          fe_values.JxW(q);
                 }
             }
         }
@@ -429,8 +413,6 @@ void NavierStokes<dim>::assemble_static()
             velocity_mass.add(dof_indices, cell_velocity_mass);
         if (assemble_pressure_mass)
             pressure_mass.add(dof_indices, cell_pressure_mass);
-        if (assemble_pcd_pressure)
-            pressure_laplacian.add(dof_indices, cell_pressure_laplacian);
 
     }
 
@@ -439,8 +421,6 @@ void NavierStokes<dim>::assemble_static()
         velocity_mass.compress(VectorOperation::add);
     if (assemble_pressure_mass)
         pressure_mass.compress(VectorOperation::add);
-    if (assemble_pcd_pressure)
-        pressure_laplacian.compress(VectorOperation::add);
 
     static_matrix_built = true;
 }
@@ -789,7 +769,7 @@ void NavierStokes<dim>::assemble_timestep(
 
 
 template <int dim>
-void NavierStokes<dim>::solve()
+void NavierStokes<dim>::solve(TimerOutput &timer)
 {
     pcout << "===============================================" << std::endl;
 
@@ -845,7 +825,6 @@ void NavierStokes<dim>::solve()
         required_matrices.pressure_mass = &pressure_mass.block(1, 1);
     if (needs_pcd_pressure_operators())
     {
-        required_matrices.pressure_laplacian = &pressure_laplacian.block(1, 1);
         required_matrices.pressure_laplacian_discrete =
           &pressure_laplacian_discrete.block(1, 1);
         required_matrices.pressure_convection_diffusion =
@@ -855,6 +834,7 @@ void NavierStokes<dim>::solve()
     required_matrices.BT = &system_matrix.block(0, 1);
     required_matrices.solution_template = &solution_owned;
     required_matrices.simple_pressure_relaxation = simple_pressure_relaxation;
+    required_matrices.preconditioner_iterations = preconditioner_iterations;
 
     pcout << "  Building preconditioner = "
           << to_string(preconditioner_kind) << std::endl;
@@ -868,7 +848,11 @@ void NavierStokes<dim>::solve()
                                                             additional_data);
 
     pcout << "  Starting outer FGMRES" << std::endl;
-    solver.solve(system_matrix, solution_owned, system_rhs, *preconditioner);
+    preconditioner->set_timer(&timer);
+    {
+        TimerOutput::Scope timer_section(timer, "solve/outer_fgmres");
+        solver.solve(system_matrix, solution_owned, system_rhs, *preconditioner);
+    }
     pcout << "  Outer FGMRES completed" << std::endl;
 
     pcout << "  " << solver_control.last_step() << " FGMRES iterations"
@@ -962,6 +946,7 @@ void NavierStokes<dim>::run()
           << ", rel tol = " << linear_relative_tolerance
           << ", abs tol = " << linear_absolute_tolerance << std::endl;
     pcout << "===============================================" << std::endl;
+    TimerOutput timer(MPI_COMM_WORLD, pcout, TimerOutput::summary, TimerOutput::wall_times);
 
     setup();
 
@@ -1002,7 +987,7 @@ void NavierStokes<dim>::run()
             // One Oseen linearization per timestep:
             // beta = u^n in the convective terms.
             assemble_timestep(old_solution);
-            solve();
+            solve(timer);
             solution = solution_owned;
         }
         else
@@ -1040,7 +1025,7 @@ void NavierStokes<dim>::run()
 
                 // Use the current Picard iterate as linear initial guess.
                 solution = beta_solution;
-                solve();
+                solve(timer);
 
                 TrilinosWrappers::MPI::Vector velocity_update;
                 velocity_update.reinit(solution_owned.block(0));

@@ -32,6 +32,8 @@ class Simple : public NavierStokesPreconditioner
             B_T = data.BT;
             pressure_relaxation =
               std::min(1.0, std::max(0.0, data.simple_pressure_relaxation));
+            velocity_max_iterations = data.preconditioner_iterations.simple_velocity_max_iterations;
+            schur_max_iterations = data.preconditioner_iterations.simple_schur_max_iterations;
 
             diag_F_inv.reinit(data.solution_template->block(0));
             neg_diag_F_inv.reinit(data.solution_template->block(0));
@@ -73,7 +75,16 @@ class Simple : public NavierStokesPreconditioner
             velocity_correction.reinit(src.block(0));
 
             // Step 1: u_hat ~= F^{-1} r_u.
-            solve(*F, u_hat, src.block(0), preconditioner_F, 100, 1e-2, 1e-12);
+            time_section("simple_vmult/f_solve_limited", [&]()
+            {
+                solve(*F,
+                      u_hat,
+                      src.block(0),
+                      preconditioner_F,
+                      velocity_max_iterations,
+                      1e-2,
+                      1e-12);
+            });
 
             // Step 2: r_p = r_p - B u_hat.
             B->vmult(pressure_rhs, u_hat);
@@ -82,13 +93,16 @@ class Simple : public NavierStokesPreconditioner
 
             // Step 3: z_p ~= S_SIMPLE^{-1} r_p,
             // where S_SIMPLE = B diag(F)^{-1} B^T.
-            solve(simple_schur,
-                  pressure_correction,
-                  pressure_rhs,
-                  preconditioner_S,
-                  250,
-                  1e-3,
-                  1e-12);
+            time_section("simple_vmult/schur_solve_limited", [&]()
+            {
+                solve(simple_schur,
+                      pressure_correction,
+                      pressure_rhs,
+                      preconditioner_S,
+                      schur_max_iterations,
+                      1e-3,
+                      1e-12);
+            });
             
             // z_p = alpha * z_p, where alpha is the pressure relaxation factor      
             pressure_correction *= pressure_relaxation;
@@ -149,6 +163,9 @@ class Simple : public NavierStokesPreconditioner
 
         TrilinosWrappers::PreconditionILU preconditioner_F;
         TrilinosWrappers::PreconditionILU preconditioner_S;
+
+        unsigned int velocity_max_iterations = 5;
+        unsigned int schur_max_iterations = 20;
 };
 
 #endif

@@ -83,6 +83,7 @@ namespace
         problem.set_preconditioner(parameters.preconditioner);
         problem.set_simple_pressure_relaxation(
           parameters.simple_pressure_relaxation);
+        problem.set_preconditioner_iterations(parameters.preconditioner_iterations);
         problem.set_stabilization_options(parameters.stabilization);
 
         Case benchmark_case(parameters);

@@ -4,7 +4,6 @@
 #include "../NavierStokesOptions.hpp"
 
 #include "BlockTriangular.hpp"
-#include "Identity.hpp"
 #include "PCD.hpp"
 #include "Simple.hpp"
 #include "Yosida.hpp"
@@ -17,8 +16,6 @@ make_preconditioner(const PreconditionerKind preconditioner)
 {
     switch (preconditioner)
     {
-        case PreconditionerKind::Identity:
-            return std::make_unique<IdentityPreconditioner>();
         case PreconditionerKind::Simple:
             return std::make_unique<Simple>();
         case PreconditionerKind::BlockTriangular:
