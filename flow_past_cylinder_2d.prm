@@ -65,3 +65,10 @@ subsection Boundary ids
   set Walls = 3
   set Cylinder = 5
 end
+
+subsection Output
+  set Output directory = benchmark_results/default_run
+  set Run id = default_run
+  set Benchmark id = manual_2d
+  set Mesh name = L0
+end

@@ -12,6 +12,7 @@ class NavierStokes3D : public NavierStokes<3>
 
         void set_force_coefficient_parameters(const double reference_velocity,
                                               const double reference_area,
+                                              const double reference_length,
                                               const types::boundary_id cylinder_boundary_id_);
 
     protected:
@@ -22,6 +23,7 @@ class NavierStokes3D : public NavierStokes<3>
     private:
         double force_coefficient_reference_velocity = 0.0;
         double force_coefficient_reference_area = 0.0;
+        double force_coefficient_reference_length = 0.0;
         types::boundary_id cylinder_boundary_id = static_cast<types::boundary_id>(-1);
 };
 

@@ -7,6 +7,8 @@
 
 struct FlowPastCylinder2DConfig
 {
+    static constexpr unsigned int dimension = 2;
+
     std::string mesh_file_name = "../mesh/navierstokes_L0.msh";
     unsigned int degree_velocity = 2;
     unsigned int degree_pressure = 1;
@@ -15,6 +17,11 @@ struct FlowPastCylinder2DConfig
     double T = 7.0;
     double theta = 0.6;
     double delta_t = 0.1;
+
+    std::string output_directory = "benchmark_results/default_run";
+    std::string run_id = "default_run";
+    std::string benchmark_id = "unknown";
+    std::string mesh_name = "unknown";
 
     NonlinearMethod nonlinear_method = NonlinearMethod::Oseen;
     unsigned int nonlinear_max_iterations = 2;
@@ -26,7 +33,7 @@ struct FlowPastCylinder2DConfig
     unsigned int linear_max_iterations = 10000;
     double linear_relative_tolerance = 1e-6;
     double linear_absolute_tolerance = 1e-10;
-    PreconditionerKind preconditioner = PreconditionerKind::PCD;
+    PreconditionerKind preconditioner = PreconditionerKind::Simple;
     double simple_pressure_relaxation = 0.7;
     PreconditionerIterationOptions preconditioner_iterations;
 

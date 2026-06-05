@@ -1,6 +1,6 @@
 subsection Mesh and discretization
   set Dimension = 3
-  set Mesh file = ../mesh/navierstokes3D_L1.msh
+  set Mesh file = ../mesh/navierstokes3D_L0.msh
   set Velocity degree = 2
   set Pressure degree = 1
   set Final time = 7
@@ -67,4 +67,11 @@ subsection Boundary ids
   set Outlet = 2
   set Walls = 3
   set Cylinder = 5
+end
+
+subsection Output
+  set Output directory = benchmark_results/default_run
+  set Run id = default_run
+  set Benchmark id = manual_3d
+  set Mesh name = 3D_L0
 end

@@ -31,7 +31,7 @@ void FlowPastCylinder2DParser::declare_parameters(ParameterHandler &prm)
     prm.declare_entry("Linear relative tolerance", "1e-6", Patterns::Double(0.0));
     prm.declare_entry("Linear absolute tolerance", "1e-10", Patterns::Double(0.0));
     prm.declare_entry("Preconditioner",
-                      "pcd",
+                      "simple",
                       Patterns::Selection(
                         "simple|block_triangular|yosida|pcd"));
     prm.declare_entry("SIMPLE pressure relaxation",
@@ -82,6 +82,13 @@ void FlowPastCylinder2DParser::declare_parameters(ParameterHandler &prm)
     prm.declare_entry("Outlet", "2", Patterns::Integer(0));
     prm.declare_entry("Walls", "3", Patterns::Integer(0));
     prm.declare_entry("Cylinder", "5", Patterns::Integer(0));
+    prm.leave_subsection();
+
+    prm.enter_subsection("Output");
+    prm.declare_entry("Output directory","benchmark_results/default_run",Patterns::Anything());
+    prm.declare_entry("Run id", "default_run", Patterns::Anything());
+    prm.declare_entry("Benchmark id", "unknown", Patterns::Anything());
+    prm.declare_entry("Mesh name", "unknown", Patterns::Anything());
     prm.leave_subsection();
 }
 
@@ -197,6 +204,13 @@ FlowPastCylinder2DConfig FlowPastCylinder2DParser::parse_parameters(
       static_cast<types::boundary_id>(prm.get_integer("Cylinder"));
     prm.leave_subsection();
 
+    prm.enter_subsection("Output");
+    config.output_directory = prm.get("Output directory");
+    config.run_id = prm.get("Run id");
+    config.benchmark_id = prm.get("Benchmark id");
+    config.mesh_name = prm.get("Mesh name");
+    prm.leave_subsection();
+
     return config;
 }
 
@@ -220,8 +234,7 @@ FlowPastCylinder2DInlet::FlowPastCylinder2DInlet(const double inlet_velocity_,
 {}
 
 // Inlet velocity profile
-void FlowPastCylinder2DInlet::vector_value(const Point<2> &point,
-                                           Vector<double> &values) const
+void FlowPastCylinder2DInlet::vector_value(const Point<2> &point,Vector<double> &values) const
 {
     double ramp_factor = 1.0;
     if (ramp_time > 0.0)
@@ -250,16 +263,14 @@ FlowPastCylinder2DOutletPressure::FlowPastCylinder2DOutletPressure(
   : outlet_pressure(outlet_pressure_)
 {}
 
-double FlowPastCylinder2DOutletPressure::value(const Point<2> &,
-                                               const unsigned int) const
+double FlowPastCylinder2DOutletPressure::value(const Point<2> &,const unsigned int) const
 {
     return outlet_pressure;
 }
 
 FlowPastCylinder2DCase::FlowPastCylinder2DCase(
   const FlowPastCylinder2DConfig &parameters)
-  : force_coefficient_reference_velocity(
-      parameters.force_coefficient_reference_velocity)
+  : force_coefficient_reference_velocity(parameters.force_coefficient_reference_velocity)
   , force_coefficient_reference_length(parameters.force_coefficient_reference_length)
   , inlet_boundary_id(parameters.inlet_boundary_id)
   , outlet_boundary_id(parameters.outlet_boundary_id)

@@ -1,15 +1,16 @@
 #include "NavierStokes3D.hpp"
 
-#include <fstream>
 #include <stdexcept>
 
 void NavierStokes3D::set_force_coefficient_parameters(
   const double reference_velocity,
   const double reference_area,
+  const double reference_length,
   const types::boundary_id cylinder_boundary_id_)
 {
     force_coefficient_reference_velocity = reference_velocity;
     force_coefficient_reference_area = reference_area;
+    force_coefficient_reference_length = reference_length;
     cylinder_boundary_id = cylinder_boundary_id_;
 }
 
@@ -17,6 +18,7 @@ void NavierStokes3D::compute_forces()
 {
     if (force_coefficient_reference_velocity <= 0.0 ||
         force_coefficient_reference_area <= 0.0 ||
+        force_coefficient_reference_length <= 0.0 ||
         cylinder_boundary_id == static_cast<types::boundary_id>(-1))
         throw std::runtime_error(
           "NavierStokes3D force-coefficient parameters were not initialized.");
@@ -103,6 +105,11 @@ void NavierStokes3D::compute_forces()
     const double C_L = total_force[1] / denominator;
     const double C_S = total_force[2] / denominator;
 
+    // DFG/Schaefer-Turek pressure-probe points on the cylinder, at midspan.
+    const Point<dim> front_pressure_point(0.45, 0.2, 0.205);
+    const Point<dim> back_pressure_point(0.55, 0.2, 0.205);
+    const double delta_pressure = this->compute_pressure_difference(front_pressure_point, back_pressure_point);
+
     if (this->mpi_rank == 0)
     {
         this->pcout << "   Step " << this->timestep_number
@@ -112,11 +119,9 @@ void NavierStokes3D::compute_forces()
         this->pcout << "   Coeffs: Cd=" << C_D
                     << ", Cl=" << C_L
                     << ", Cs=" << C_S << std::endl;
-
-        std::ofstream file("coefficients_3d.txt", std::ios::app);
-        file << this->time << " " << C_D << " " << C_L << " " << C_S
-             << std::endl;
     }
+
+    this->write_benchmark_metrics(C_D, C_L, C_S, delta_pressure, force_coefficient_reference_velocity,force_coefficient_reference_length);
 }
 
 std::string NavierStokes3D::simulation_name() const
@@ -126,6 +131,5 @@ std::string NavierStokes3D::simulation_name() const
 
 std::string NavierStokes3D::output_folder() const
 {
-    return "results_3d";
+    return benchmark_output_directory();
 }
-

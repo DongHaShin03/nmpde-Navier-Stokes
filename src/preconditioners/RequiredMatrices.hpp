@@ -6,29 +6,9 @@
 #include <deal.II/lac/trilinos_precondition.h>
 #include <deal.II/lac/trilinos_sparse_matrix.h>
 
-using namespace dealii;
+#include "../NavierStokesOptions.hpp"
 
-struct PreconditionerIterationOptions
-{
-    unsigned int block_triangular_velocity_max_iterations = 100;
-    unsigned int block_triangular_schur_max_iterations = 250;
-    double block_triangular_velocity_relative_tolerance = 1e-2;
-    double block_triangular_schur_relative_tolerance = 1e-3;
-    unsigned int simple_velocity_max_iterations = 5;
-    unsigned int simple_schur_max_iterations = 20;
-    double simple_velocity_relative_tolerance = 1e-2;
-    double simple_schur_relative_tolerance = 1e-3;
-    unsigned int pcd_velocity_max_iterations = 10;
-    unsigned int pcd_pressure_max_iterations = 20;
-    double pcd_velocity_relative_tolerance = 1e-2;
-    double pcd_pressure_relative_tolerance = 1e-3;
-    unsigned int yosida_velocity_max_iterations = 100000;
-    unsigned int yosida_schur_max_iterations = 100000;
-    unsigned int yosida_correction_max_iterations = 100000;
-    double yosida_relative_tolerance = 1e-2;
-    double preconditioner_absolute_tolerance = 1e-12;
-    double yosida_absolute_tolerance = 1e-14;
-};
+using namespace dealii;
 
 struct RequiredMatrices
 {
