@@ -55,5 +55,7 @@
 main
 main2
 main3
-
+__pycache__/
+*.pyc
 /build
+benchmark_results/

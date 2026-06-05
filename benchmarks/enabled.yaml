@@ -1,0 +1,26 @@
+# Toggle benchmark execution here. `true` means selected by `--all`; `false` means skipped.
+benchmarks:
+  B0: false
+  B1: true
+  B2: true
+  B3: true
+  B4: true
+  B5: true
+  B6: true
+  B7: true
+  B8: true
+  P0: false
+  P1: true
+  P2: true
+  P3: false
+  P4: true
+  P5: true
+  P6: true
+  P7: false
+  P8: false
+  P9: true
+  P10: true
+  P11: true
+  E1: false
+  E2: false
+  E3: true

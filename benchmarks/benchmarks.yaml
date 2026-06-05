@@ -1,0 +1,353 @@
+defaults:
+  output_root: benchmark_results
+  executable: build/main
+  mpirun: mpirun
+  mesh_catalog:
+    L0: ../mesh/navierstokes_L0.msh
+    L1: ../mesh/navierstokes_L1.msh
+    L2: ../mesh/navierstokes_L2.msh
+    3D_L0: ../mesh/navierstokes3D_L0.msh
+  reynolds_viscosity:
+    20: 0.005
+    100: 0.001
+    200: 0.0005
+  base_config:
+    dimension: 2
+    mesh: L0
+    velocity_degree: 2
+    pressure_degree: 1
+    theta: 0.6
+    dt: 0.1
+    final_time: 8.0
+    inlet_velocity: 1.5
+    inlet_ramp_time: 8.0
+    inlet_channel_height: 0.41
+    inlet_channel_width: 0.41
+    reference_velocity: 1.0
+    reference_length: 0.1
+    reference_span: 0.41
+    Re: 100
+    nu: 0.001
+    nonlinear_method: oseen
+    nonlinear_iterations: 1
+    nonlinear_tolerance: 1e-6
+    picard_relaxation: 1.0
+    preconditioner: simple
+    simple_pressure_relaxation: 0.7
+    temam: true
+    grad_div: true
+    gamma_grad_div: 0.01
+    supg: true
+    linear_relative_tolerance: 1e-6
+    linear_absolute_tolerance: 1e-10
+    gmres_restart_length: 300
+    linear_max_iterations: 10000
+    pressure_regularization: 0.0
+    outlet_pressure: 0.0
+    boundary_ids:
+      inlet: 1
+      outlet: 2
+      walls: 3
+      cylinder: 5
+    block_triangular_velocity_max_iterations: 15
+    block_triangular_schur_max_iterations: 20
+    block_triangular_velocity_relative_tolerance: 1e-2
+    block_triangular_schur_relative_tolerance: 1e-3
+    simple_velocity_max_iterations: 5
+    simple_schur_max_iterations: 10
+    simple_velocity_relative_tolerance: 1e-2
+    simple_schur_relative_tolerance: 1e-3
+    pcd_velocity_max_iterations: 10
+    pcd_pressure_max_iterations: 20
+    pcd_velocity_relative_tolerance: 1e-2
+    pcd_pressure_relative_tolerance: 1e-3
+    yosida_velocity_max_iterations: 10000
+    yosida_schur_max_iterations: 10000
+    yosida_correction_max_iterations: 10000
+    yosida_relative_tolerance: 1e-2
+    preconditioner_absolute_tolerance: 1e-12
+    yosida_absolute_tolerance: 1e-14
+    mpi_ranks: 1
+
+benchmarks:
+  B0:
+    description: Sanity run 2D breve.
+    config:
+      final_time: 1.0
+      dt: 0.1
+      Re: 100
+      nu: 0.001
+      preconditioner: simple
+
+  B1:
+    description: 2D steady Schaefer-Turek, Re=20.
+    config:
+      final_time: 10.0
+      dt: 0.1
+      inlet_velocity: 0.3
+      inlet_ramp_time: 0.0
+      reference_velocity: 0.2
+      Re: 20
+      nu: 0.001
+      preconditioner: simple
+
+  B2:
+    description: 2D ramp Schaefer-Turek, Re(t)=0..100.
+    config:
+      final_time: 8.0
+      dt: 0.1
+      inlet_velocity: 1.5
+      inlet_ramp_time: 8.0
+      Re: 100
+      nu: 0.001
+      preconditioner: simple
+
+  B3:
+    description: 2D periodic Schaefer-Turek, Re=100.
+    config:
+      final_time: 20.0
+      dt: 0.05
+      inlet_velocity: 1.5
+      inlet_ramp_time: 0.0
+      Re: 100
+      nu: 0.001
+      preconditioner: simple
+
+  B4:
+    description: Mesh refinement fisico 2D.
+    config:
+      final_time: 8.0
+      dt: 0.1
+      Re: 100
+      nu: 0.001
+      preconditioner: simple
+    sweep:
+      mesh: [L0, L1, L2]
+
+  B5:
+    description: Time-step refinement fisico 2D.
+    config:
+      final_time: 8.0
+      Re: 100
+      nu: 0.001
+      preconditioner: simple
+    sweep:
+      dt: [0.2, 0.1, 0.05, 0.025]
+
+  B6:
+    description: Reynolds sweep 2D.
+    config:
+      final_time: 8.0
+      dt: 0.1
+      preconditioner: simple
+    sweep:
+      Re:
+        - {Re: 20, nu: 0.005}
+        - {Re: 100, nu: 0.001}
+        - {Re: 200, nu: 0.0005}
+
+  B7:
+    description: 3D cylinder benchmark dimostrativo.
+    config:
+      dimension: 3
+      mesh: 3D_L0
+      final_time: 8.0
+      dt: 0.1
+      inlet_velocity: 2.25
+      inlet_ramp_time: 8.0
+      inlet_channel_height: 0.41
+      inlet_channel_width: 0.41
+      reference_velocity: 1.0
+      reference_length: 0.1
+      reference_span: 0.41
+      Re: 100
+      nu: 0.001
+      preconditioner: simple
+
+  B8:
+    description: Overview fisica finale; expands to B1, B2, B3, B6.
+    aliases: [B1, B2, B3, B6]
+
+  P0:
+    description: Protocollo comune precondizionatori, breve.
+    config:
+      final_time: 1.0
+      dt: 0.1
+      Re: 100
+      nu: 0.001
+    sweep:
+      preconditioner: [block_triangular, simple, yosida, pcd]
+
+  P1:
+    description: Confronto base precondizionatori.
+    config:
+      final_time: 8.0
+      dt: 0.1
+      Re: 100
+      nu: 0.001
+      nonlinear_method: oseen
+    sweep:
+      preconditioner: [block_triangular, simple, yosida, pcd]
+
+  P2:
+    description: Sensibilita a dt per precondizionatori.
+    config:
+      final_time: 8.0
+      Re: 100
+      nu: 0.001
+    sweep:
+      preconditioner: [simple, yosida, pcd]
+      dt: [0.2, 0.1, 0.05, 0.025]
+
+  P3:
+    description: Sensibilita alla mesh per precondizionatori.
+    config:
+      final_time: 8.0
+      dt: 0.1
+      Re: 100
+      nu: 0.001
+    sweep:
+      preconditioner: [simple, yosida, pcd, block_triangular]
+      mesh: [L0, L1, L2]
+
+  P4:
+    description: Sensibilita a Reynolds/viscosita per precondizionatori.
+    config:
+      final_time: 8.0
+      dt: 0.1
+    sweep:
+      preconditioner: [simple, yosida, pcd, block_triangular]
+      Re:
+        - {Re: 20, nu: 0.005}
+        - {Re: 100, nu: 0.001}
+        - {Re: 200, nu: 0.0005}
+
+  P5:
+    description: SIMPLE pressure relaxation sweep.
+    config:
+      final_time: 8.0
+      dt: 0.1
+      Re: 100
+      nu: 0.001
+      preconditioner: simple
+    sweep:
+      simple_pressure_relaxation: [0.3, 0.5, 0.7, 0.9, 1.0]
+
+  P6:
+    description: PCD inner tolerance sweep.
+    config:
+      final_time: 8.0
+      dt: 0.1
+      Re: 100
+      nu: 0.001
+      preconditioner: pcd
+    sweep:
+      pcd_inner_tolerance: [1e-1, 1e-2, 1e-3, 1e-4]
+
+  P7:
+    description: Stabilization x preconditioner.
+    config:
+      final_time: 8.0
+      dt: 0.1
+      Re: 100
+      nu: 0.001
+    sweep:
+      preconditioner: [simple, yosida, pcd]
+      stabilization:
+        - {name: baseline, temam: true, grad_div: true, gamma_grad_div: 0.01, supg: true}
+        - {name: no_graddiv, temam: true, grad_div: false, gamma_grad_div: 0.0, supg: true}
+        - {name: gd_1e-3, temam: true, grad_div: true, gamma_grad_div: 0.001, supg: true}
+        - {name: gd_1e-1, temam: true, grad_div: true, gamma_grad_div: 0.1, supg: true}
+        - {name: no_supg, temam: true, grad_div: true, gamma_grad_div: 0.01, supg: false}
+
+  P8:
+    description: Nonlinear solver x preconditioner.
+    config:
+      final_time: 8.0
+      dt: 0.1
+      Re: 100
+      nu: 0.001
+    sweep:
+      preconditioner: [simple, yosida, pcd]
+      nonlinear:
+        - {name: oseen, nonlinear_method: oseen, nonlinear_iterations: 1, picard_relaxation: 1.0}
+        - {name: picard2, nonlinear_method: picard, nonlinear_iterations: 2, picard_relaxation: 1.0}
+        - {name: picard_relaxed, nonlinear_method: picard_relaxed, nonlinear_iterations: 4, picard_relaxation: 0.7}
+
+  P9:
+    description: Strong scaling MPI.
+    config:
+      final_time: 2.0
+      dt: 0.1
+      Re: 100
+      nu: 0.001
+    sweep:
+      preconditioner: [simple, yosida, pcd]
+      mpi_ranks: [1, 2, 4, 8]
+
+  P10:
+    description: Setup/solve cost breakdown.
+    config:
+      final_time: 8.0
+      dt: 0.1
+      Re: 100
+      nu: 0.001
+    sweep:
+      preconditioner: [simple, yosida, pcd, block_triangular]
+
+  P11:
+    description: Mini benchmark precondizionatori 3D.
+    config:
+      dimension: 3
+      mesh: 3D_L0
+      final_time: 2.0
+      dt: 0.1
+      inlet_velocity: 2.25
+      inlet_ramp_time: 8.0
+      inlet_channel_height: 0.41
+      inlet_channel_width: 0.41
+      reference_velocity: 1.0
+      reference_length: 0.1
+      reference_span: 0.41
+      Re: 100
+      nu: 0.001
+    sweep:
+      preconditioner: [simple, yosida, pcd]
+
+  E1:
+    description: Stabilization ablation fisica con SIMPLE.
+    config:
+      final_time: 8.0
+      dt: 0.1
+      Re: 100
+      nu: 0.001
+      preconditioner: simple
+    sweep:
+      stabilization:
+        - {name: baseline, temam: true, grad_div: true, gamma_grad_div: 0.01, supg: true}
+        - {name: no_graddiv, temam: true, grad_div: false, gamma_grad_div: 0.0, supg: true}
+        - {name: gd_1e-1, temam: true, grad_div: true, gamma_grad_div: 0.1, supg: true}
+        - {name: no_supg, temam: true, grad_div: true, gamma_grad_div: 0.01, supg: false}
+
+  E2:
+    description: Nonlinear solver ablation fisica con SIMPLE.
+    config:
+      final_time: 8.0
+      dt: 0.1
+      Re: 100
+      nu: 0.001
+      preconditioner: simple
+    sweep:
+      nonlinear:
+        - {name: oseen, nonlinear_method: oseen, nonlinear_iterations: 1, picard_relaxation: 1.0}
+        - {name: picard2, nonlinear_method: picard, nonlinear_iterations: 2, picard_relaxation: 1.0}
+        - {name: picard_relaxed, nonlinear_method: picard_relaxed, nonlinear_iterations: 4, picard_relaxation: 0.7}
+
+  E3:
+    description: Output/visual benchmark.
+    config:
+      final_time: 8.0
+      dt: 0.1
+      Re: 100
+      nu: 0.001
+      preconditioner: simple
