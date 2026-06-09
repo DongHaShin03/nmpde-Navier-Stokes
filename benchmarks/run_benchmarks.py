@@ -114,6 +114,11 @@ def apply_sweep_value(config, key, value, defaults, variant):
         variant["pcd_inner_tolerance"] = value
         return
 
+    if key == "tolerance_profile":
+        config.update({k: v for k, v in value.items() if k != "name"})
+        variant["tolerance_profile_name"] = value.get("name", "tolerance")
+        return
+
     config[key] = value
 
 
@@ -132,6 +137,24 @@ def make_run_id(benchmark_id, config, variant):
         parts.append("np" + number_token(config.get("mpi_ranks")))
     if "pcd_inner_tolerance" in variant["sweep_keys"]:
         parts.append("pcdtol" + number_token(variant.get("pcd_inner_tolerance")))
+    if "pcd_pressure_relative_tolerance" in variant["sweep_keys"]:
+        parts.append("pcdptol" + number_token(config.get("pcd_pressure_relative_tolerance")))
+
+    tolerance_keys = [
+        ("simple_velocity_relative_tolerance", "svtol"),
+        ("simple_schur_relative_tolerance", "sstol"),
+        ("block_triangular_velocity_relative_tolerance", "bvtol"),
+        ("block_triangular_schur_relative_tolerance", "bstol"),
+        ("pcd_velocity_relative_tolerance", "pcdvtol"),
+        ("yosida_relative_tolerance", "ytol"),
+    ]
+    for key, prefix in tolerance_keys:
+        if key in variant["sweep_keys"]:
+            parts.append(prefix + number_token(config.get(key)))
+
+    tolerance_profile_name = variant.get("tolerance_profile_name")
+    if tolerance_profile_name:
+        parts.append(sanitize_token(tolerance_profile_name))
 
     stabilization_name = variant.get("stabilization_name")
     if stabilization_name and stabilization_name != "baseline":
@@ -156,13 +179,15 @@ def materialize_run(benchmark_id, config, defaults, output_root, variant):
     config["mesh_name"] = mesh_name
     config["mesh_file"] = mesh_file
     config["benchmark_id"] = benchmark_id
+    config.setdefault("statistics_start_time", 0.0)
+    config.setdefault("write_solution_output", True)
     config["run_id"] = make_run_id(benchmark_id, config, variant)
     config["output_directory"] = str((output_root / config["run_id"]).resolve())
     return config
 
 
-def expand_benchmark(benchmark_id, benchmark, defaults, args, output_root):
-    if benchmark.get("enabled", True) is False:
+def expand_benchmark(benchmark_id, benchmark, defaults, args, output_root, respect_enabled=True):
+    if respect_enabled and benchmark.get("enabled", True) is False:
         print(f"Skipping disabled benchmark {benchmark_id}: {benchmark.get('todo', '')}")
         return []
 
@@ -334,6 +359,8 @@ def write_prm(path, config):
         f"  set Run id = {config['run_id']}",
         f"  set Benchmark id = {config['benchmark_id']}",
         f"  set Mesh name = {config['mesh_name']}",
+        f"  set Write solution output = {prm_value(config['write_solution_output'])}",
+        f"  set Statistics start time = {config['statistics_start_time']}",
         "end",
         "",
     ])
@@ -347,21 +374,79 @@ def write_config_json(path, config, command):
     path.write_text(json.dumps(data, indent=2, sort_keys=True), encoding="utf-8")
 
 
+def csv_float(row, key):
+    try:
+        return float(row.get(key, ""))
+    except (TypeError, ValueError):
+        return math.nan
+
+
+def csv_int(row, key):
+    value = csv_float(row, key)
+    if not math.isfinite(value):
+        return None
+    return int(value)
+
+
+def strong_scaling_group_key(row):
+    return (
+        row.get("benchmark_id", ""),
+        row.get("preconditioner", ""),
+        row.get("mesh_name", ""),
+        row.get("dt", ""),
+        row.get("nu", ""),
+        row.get("Re", ""),
+        row.get("nonlinear_method", ""),
+    )
+
+
+def enrich_scaling_metrics(rows):
+    baselines = {}
+    for row in rows:
+        if row.get("benchmark_id") != "P8":
+            continue
+        if csv_int(row, "mpi_ranks") != 1:
+            continue
+
+        runtime = csv_float(row, "total_runtime")
+        gmres_mean = csv_float(row, "gmres_mean")
+        if math.isfinite(runtime) and runtime > 0.0:
+            baselines[strong_scaling_group_key(row)] = {
+                "runtime": runtime,
+                "gmres_mean": gmres_mean,
+            }
+
+    for row in rows:
+        row.setdefault("speedup", "")
+        row.setdefault("efficiency", "")
+        row.setdefault("iteration_growth", "")
+        if row.get("benchmark_id") != "P8":
+            continue
+
+        baseline = baselines.get(strong_scaling_group_key(row))
+        mpi_ranks = csv_int(row, "mpi_ranks")
+        runtime = csv_float(row, "total_runtime")
+        gmres_mean = csv_float(row, "gmres_mean")
+        if baseline is None or mpi_ranks is None or mpi_ranks <= 0:
+            continue
+        if not math.isfinite(runtime) or runtime <= 0.0:
+            continue
+
+        speedup = baseline["runtime"] / runtime
+        row["speedup"] = f"{speedup:.16g}"
+        row["efficiency"] = f"{speedup / float(mpi_ranks):.16g}"
+
+        baseline_gmres = baseline.get("gmres_mean", math.nan)
+        if math.isfinite(gmres_mean) and math.isfinite(baseline_gmres) and baseline_gmres > 0.0:
+            row["iteration_growth"] = f"{gmres_mean / baseline_gmres:.16g}"
+
+
 def aggregate_summaries(output_root):
     summaries = sorted(output_root.glob("*/summary.csv"))
     target = output_root / "all_summaries.csv"
 
     if not summaries:
         return
-
-    try:
-        import pandas as pd
-
-        frames = [pd.read_csv(path) for path in summaries]
-        pd.concat(frames, ignore_index=True).to_csv(target, index=False)
-        return
-    except ImportError:
-        pass
 
     rows = []
     fieldnames = []
@@ -373,6 +458,11 @@ def aggregate_summaries(output_root):
                 for field in row:
                     if field not in fieldnames:
                         fieldnames.append(field)
+
+    enrich_scaling_metrics(rows)
+    for field in ["speedup", "efficiency", "iteration_growth"]:
+        if field not in fieldnames:
+            fieldnames.append(field)
 
     with target.open("w", newline="", encoding="utf-8") as handle:
         writer = csv.DictWriter(handle, fieldnames=fieldnames)
@@ -478,7 +568,14 @@ def main():
     runs = []
     for benchmark_id in selected:
         runs.extend(
-            expand_benchmark(benchmark_id, benchmarks[benchmark_id], defaults, args, output_root)
+            expand_benchmark(
+                benchmark_id,
+                benchmarks[benchmark_id],
+                defaults,
+                args,
+                output_root,
+                respect_enabled=args.all,
+            )
         )
 
     seen = set()
