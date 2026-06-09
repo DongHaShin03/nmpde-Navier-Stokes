@@ -23,6 +23,9 @@ void NavierStokes<dim>::reset_current_step_metrics()
 {
     current_step_linear_solves = 0;
     current_step_gmres_iterations = 0;
+    current_step_preconditioner_inner_solves = 0;
+    current_step_preconditioner_inner_iterations = 0;
+    current_step_preconditioner_inner_failures = 0;
     current_step_nonlinear_iterations = 0;
     current_step_gmres_final_residual = std::numeric_limits<double>::quiet_NaN();
     current_step_gmres_converged = true;
@@ -179,6 +182,9 @@ void NavierStokes<dim>::write_benchmark_metrics(const double drag_coefficient, c
     record.field_metrics = compute_field_metrics();
     record.solver_metrics.linear_solves = current_step_linear_solves;
     record.solver_metrics.gmres_iterations = current_step_gmres_iterations;
+    record.solver_metrics.preconditioner_inner_solves = current_step_preconditioner_inner_solves;
+    record.solver_metrics.preconditioner_inner_iterations = current_step_preconditioner_inner_iterations;
+    record.solver_metrics.preconditioner_inner_failures = current_step_preconditioner_inner_failures;
     record.solver_metrics.nonlinear_iterations = current_step_nonlinear_iterations;
     record.solver_metrics.gmres_final_residual = current_step_gmres_final_residual;
     record.solver_metrics.gmres_converged = current_step_linear_solves > 0 && current_step_gmres_converged;

@@ -22,6 +22,8 @@ struct FlowPastCylinder3DConfig
     std::string run_id = "default_run";
     std::string benchmark_id = "unknown";
     std::string mesh_name = "unknown";
+    bool write_solution_output = true;
+    double statistics_start_time = 0.0;
 
     NonlinearMethod nonlinear_method = NonlinearMethod::Oseen;
     unsigned int nonlinear_max_iterations = 2;

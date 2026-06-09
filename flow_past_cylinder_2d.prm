@@ -71,4 +71,6 @@ subsection Output
   set Run id = default_run
   set Benchmark id = manual_2d
   set Mesh name = L0
+  set Write solution output = true
+  set Statistics start time = 0.0
 end

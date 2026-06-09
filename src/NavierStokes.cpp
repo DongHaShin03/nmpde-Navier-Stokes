@@ -110,6 +110,18 @@ void NavierStokes<dim>::set_output_options(
 }
 
 template <int dim>
+void NavierStokes<dim>::set_write_solution_output(const bool enabled)
+{
+    write_solution_output = enabled;
+}
+
+template <int dim>
+void NavierStokes<dim>::set_benchmark_statistics_start_time(const double start_time)
+{
+    benchmark_output_options.statistics_start_time = std::max(0.0, start_time);
+}
+
+template <int dim>
 void NavierStokes<dim>::set_run_config_values(const std::map<std::string, std::string> &config_values)
 {
     benchmark_output_options.config_values = config_values;
@@ -754,6 +766,7 @@ void NavierStokes<dim>::solve(TimerOutput &timer)
         preconditioner = make_preconditioner(preconditioner_kind);
         preconditioner->set_timer(&timer);
         preconditioner->initialize(required_matrices);
+        preconditioner->reset_statistics();
     }
     preconditioner_setup_timer.stop();
     current_step_preconditioner_setup_time += preconditioner_setup_timer.wall_time();
@@ -781,6 +794,10 @@ void NavierStokes<dim>::solve(TimerOutput &timer)
     }
     linear_solve_timer.stop();
     current_step_linear_solve_time += linear_solve_timer.wall_time();
+    const auto preconditioner_statistics = preconditioner->statistics();
+    current_step_preconditioner_inner_solves += preconditioner_statistics.solves;
+    current_step_preconditioner_inner_iterations += preconditioner_statistics.iterations;
+    current_step_preconditioner_inner_failures += preconditioner_statistics.failures;
     ++current_step_linear_solves;
     current_step_gmres_iterations += solver_control.last_step();
     current_step_gmres_final_residual = solver_control.last_value();
@@ -793,6 +810,9 @@ void NavierStokes<dim>::solve(TimerOutput &timer)
 template <int dim>
 void NavierStokes<dim>::output()
 {
+    if (!write_solution_output)
+        return;
+
     pcout << "===============================================" << std::endl;
 
     DataOut<dim> data_out;
@@ -872,6 +892,9 @@ void NavierStokes<dim>::run()
           << (stabilization_options.grad_div ? "on" : "off")
           << " (gamma = " << stabilization_options.gamma_grad_div << ")"
           << ", SUPG = " << (stabilization_options.supg ? "on" : "off")
+          << std::endl;
+    pcout << "   Solution output = "
+          << (write_solution_output ? "on" : "off")
           << std::endl;
     pcout << "   Linear max iters = " << linear_max_iterations
           << ", rel tol = " << linear_relative_tolerance

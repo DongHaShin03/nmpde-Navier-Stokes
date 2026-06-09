@@ -77,6 +77,8 @@ class NavierStokes
         void set_stabilization_options(const StabilizationOptions &options);
         void set_run_config_file(const std::string &parameter_file);
         void set_output_options(const std::string &output_directory, const std::string &run_id, const std::string &benchmark_id, const std::string &mesh_name);
+        void set_write_solution_output(const bool enabled);
+        void set_benchmark_statistics_start_time(const double start_time);
         void set_run_config_values(const std::map<std::string, std::string> &config_values);
 
         std::unique_ptr<Function<dim>> initial_condition;
@@ -189,6 +191,7 @@ class NavierStokes
         bool needs_pcd_pressure_operators() const;
 
         bool static_matrix_built = false;
+        bool write_solution_output = true;
 
         BenchmarkOutputOptions benchmark_output_options;
         BenchmarkRecorder benchmark_recorder;
@@ -197,6 +200,9 @@ class NavierStokes
 
         unsigned int current_step_linear_solves = 0;
         unsigned int current_step_gmres_iterations = 0;
+        unsigned int current_step_preconditioner_inner_solves = 0;
+        unsigned int current_step_preconditioner_inner_iterations = 0;
+        unsigned int current_step_preconditioner_inner_failures = 0;
         unsigned int current_step_nonlinear_iterations = 0;
         double current_step_gmres_final_residual = std::numeric_limits<double>::quiet_NaN();
         bool current_step_gmres_converged = true;

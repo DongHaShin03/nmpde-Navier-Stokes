@@ -22,6 +22,13 @@ struct AssemblyFlags
     bool Mp = false;
 };
 
+struct PreconditionerSolveStatistics
+{
+    unsigned int solves = 0;
+    unsigned int iterations = 0;
+    unsigned int failures = 0;
+};
+
 class NavierStokesPreconditioner
 {
     public:
@@ -32,6 +39,16 @@ class NavierStokesPreconditioner
         void set_timer(dealii::TimerOutput *timer_)
         {
             timer = timer_;
+        }
+
+        void reset_statistics() const
+        {
+            solve_statistics = {};
+        }
+
+        PreconditionerSolveStatistics statistics() const
+        {
+            return solve_statistics;
         }
 
         virtual void initialize(const RequiredMatrices &a) = 0;
@@ -50,7 +67,16 @@ class NavierStokesPreconditioner
                 callable();
         }
 
+        void record_inner_solve(const unsigned int iterations, const bool converged) const
+        {
+            ++solve_statistics.solves;
+            solve_statistics.iterations += iterations;
+            if (!converged)
+                ++solve_statistics.failures;
+        }
+
         dealii::TimerOutput *timer = nullptr;
+        mutable PreconditionerSolveStatistics solve_statistics;
 };
 
 #endif

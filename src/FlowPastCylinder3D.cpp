@@ -127,6 +127,8 @@ void FlowPastCylinder3DParser::declare_parameters(ParameterHandler &prm)
     prm.declare_entry("Run id", "default_run", Patterns::Anything());
     prm.declare_entry("Benchmark id", "unknown", Patterns::Anything());
     prm.declare_entry("Mesh name", "unknown", Patterns::Anything());
+    prm.declare_entry("Write solution output", "true", Patterns::Bool());
+    prm.declare_entry("Statistics start time", "0.0", Patterns::Double(0.0));
     prm.leave_subsection();
 }
 
@@ -250,6 +252,8 @@ FlowPastCylinder3DConfig FlowPastCylinder3DParser::parse_parameters(
     config.run_id = prm.get("Run id");
     config.benchmark_id = prm.get("Benchmark id");
     config.mesh_name = prm.get("Mesh name");
+    config.write_solution_output = prm.get_bool("Write solution output");
+    config.statistics_start_time = prm.get_double("Statistics start time");
     prm.leave_subsection();
 
     return config;

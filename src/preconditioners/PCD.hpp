@@ -140,7 +140,10 @@ class PCD : public NavierStokesPreconditioner
             solution = 0.0;
 
             if (rhs_norm == 0.0)
+            {
+                record_inner_solve(0, true);
                 return true;
+            }
 
             SolverControl solver_control(
               max_iterations,
@@ -150,10 +153,12 @@ class PCD : public NavierStokesPreconditioner
             try
             {
                 solver.solve(matrix, solution, rhs, preconditioner);
+                record_inner_solve(solver_control.last_step(), true);
                 return true;
             }
             catch (const SolverControl::NoConvergence &)
             {
+                record_inner_solve(solver_control.last_step(), false);
                 return false;
             }
         }

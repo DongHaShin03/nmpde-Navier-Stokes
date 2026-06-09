@@ -16,6 +16,8 @@ class BenchmarkConfig
         static void apply_to(Problem &problem, const Parameters &parameters, const std::string &parameter_file)
         {
             problem.set_output_options(parameters.output_directory, parameters.run_id, parameters.benchmark_id, parameters.mesh_name);
+            problem.set_write_solution_output(parameters.write_solution_output);
+            problem.set_benchmark_statistics_start_time(parameters.statistics_start_time);
             problem.set_run_config_file(parameter_file);
             problem.set_run_config_values(values(parameters));
         }
@@ -27,6 +29,8 @@ class BenchmarkConfig
             std::map<std::string, std::string> config_values;
             config_values["run_id"] = parameters.run_id;
             config_values["benchmark_id"] = parameters.benchmark_id;
+            config_values["write_solution_output"] = to_config_string(parameters.write_solution_output);
+            config_values["statistics_start_time"] = to_config_string(parameters.statistics_start_time);
             config_values["dimension"] = to_config_string(Parameters::dimension);
             config_values["mesh_file"] = parameters.mesh_file_name;
             config_values["mesh_name"] = parameters.mesh_name;

@@ -76,7 +76,16 @@ class Yosida : public NavierStokesPreconditioner
             // Step 1: y_u ~= F^{-1} r_u.
             time_section("yosida_vmult/f_solve", [&]()
             {
-                solver_gmres.solve(*F, yu, src.block(0), preconditioner_F);
+                try
+                {
+                    solver_gmres.solve(*F, yu, src.block(0), preconditioner_F);
+                    record_inner_solve(solver_F.last_step(), true);
+                }
+                catch (const SolverControl::NoConvergence &)
+                {
+                    record_inner_solve(solver_F.last_step(), false);
+                    throw;
+                }
             });
 
             // Step 2: r_p = r_p - B y_u.
@@ -92,7 +101,16 @@ class Yosida : public NavierStokesPreconditioner
             // Step 2: y_p ~= S_Y^(-1) r_p.
             time_section("yosida_vmult/schur_solve", [&]()
             {
-                solver_gmres_S.solve(negative_S_tilde, yp, tmp_p, preconditioner_S);
+                try
+                {
+                    solver_gmres_S.solve(negative_S_tilde, yp, tmp_p, preconditioner_S);
+                    record_inner_solve(solver_S.last_step(), true);
+                }
+                catch (const SolverControl::NoConvergence &)
+                {
+                    record_inner_solve(solver_S.last_step(), false);
+                    throw;
+                }
             });
 
             dst.block(1) = yp;
@@ -109,7 +127,16 @@ class Yosida : public NavierStokesPreconditioner
             
             time_section("yosida_vmult/f_correction_solve", [&]()
             {
-                solver_gmres2.solve(*F, correction_u, tmp_u, preconditioner_F);
+                try
+                {
+                    solver_gmres2.solve(*F, correction_u, tmp_u, preconditioner_F);
+                    record_inner_solve(solver_F2.last_step(), true);
+                }
+                catch (const SolverControl::NoConvergence &)
+                {
+                    record_inner_solve(solver_F2.last_step(), false);
+                    throw;
+                }
             });
 
             // Final block-triangular Yosida application:
