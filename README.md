@@ -66,8 +66,8 @@ The `.prm` files expect the corresponding mesh files to exist locally under
 `mesh/`. The mesh files are generated artifacts and are not intended to be
 committed.
 
-The mesh targets use the `gmsh` executable found in `PATH` by default. To use a
-reproducible local Gmsh binary instead, download it with:
+The mesh targets use a reproducible local Gmsh binary by default. Download it
+with:
 
 ```bash
 make gmsh
@@ -107,7 +107,7 @@ make mesh 2D
 make mesh 3D
 ```
 
-To force the locally downloaded Gmsh binary:
+The following explicit local-Gmsh targets are also available:
 
 ```bash
 make mesh-2d-local-gmsh
@@ -144,10 +144,17 @@ The relevant Make variables are:
 - `MESH_2D_FORMAT`: Gmsh format used for 2D meshes. Default: `msh4`.
 - `MESH_3D_FORMAT`: Gmsh format used for 3D meshes. Default: `msh2`.
 - `MESH_DIR`: output directory for generated meshes. Default: `mesh`.
-- `GMSH`: Gmsh executable. Default: `gmsh`.
+- `GMSH`: Gmsh executable. Default:
+  `tools/gmsh-$(GMSH_VERSION)-Linux64/bin/gmsh`.
 - `GMSH_VERSION`: local Gmsh version downloaded by `make gmsh`. Default:
   `4.15.0`.
 - `TOOLS_DIR`: local tool directory. Default: `tools`.
+
+To use the system Gmsh instead of the local binary, override `GMSH` explicitly:
+
+```bash
+make meshes GMSH=gmsh
+```
 
 The 2D script supports levels `0`, `1`, `2`, and `3`. The 3D script supports
 the same level values, but levels `2` and `3` can become expensive quickly
@@ -247,4 +254,3 @@ preconditioners:
   Schur complement.
 - PCD uses pressure mass, pressure convection-diffusion, and pressure Laplacian
   operators to approximate the pressure Schur inverse.
-

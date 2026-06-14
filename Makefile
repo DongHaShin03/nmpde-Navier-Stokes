@@ -1,18 +1,22 @@
 BUILD_DIR ?= build
 MESH_DIR ?= mesh
-GMSH ?= gmsh
 TOOLS_DIR ?= tools
 GMSH_VERSION ?= 4.15.0
 GMSH_ARCHIVE := gmsh-$(GMSH_VERSION)-Linux64.tgz
 GMSH_URL := https://gmsh.info/bin/Linux/$(GMSH_ARCHIVE)
 GMSH_ROOT := $(TOOLS_DIR)/gmsh-$(GMSH_VERSION)-Linux64
 GMSH_LOCAL := $(GMSH_ROOT)/bin/gmsh
+GMSH ?= $(GMSH_LOCAL)
 MESH_LEVELS ?= 0 1
 MESH_2D_FORMAT ?= msh4
 MESH_3D_FORMAT ?= msh2
 MESH_STAMP := $(MESH_DIR)/.dir
 MESH_2D_FILES := $(addprefix $(MESH_DIR)/navierstokes_L,$(addsuffix .msh,$(MESH_LEVELS)))
 MESH_3D_FILES := $(addprefix $(MESH_DIR)/navierstokes3D_L,$(addsuffix .msh,$(MESH_LEVELS)))
+GMSH_PREREQ :=
+ifeq ($(GMSH),$(GMSH_LOCAL))
+GMSH_PREREQ := $(GMSH_LOCAL)
+endif
 
 .PHONY: all configure clean clear gmsh gmsh-local meshes meshes-local-gmsh mesh mesh-2d mesh-3d mesh-2d-local-gmsh mesh-3d-local-gmsh 2D 3D
 
@@ -83,8 +87,8 @@ $(MESH_STAMP):
 	mkdir -p "$(MESH_DIR)"
 	touch "$@"
 
-$(MESH_DIR)/navierstokes_L%.msh: scripts/flow_past_cylinder_2d.geo | $(MESH_STAMP)
+$(MESH_DIR)/navierstokes_L%.msh: scripts/flow_past_cylinder_2d.geo | $(MESH_STAMP) $(GMSH_PREREQ)
 	$(GMSH) "$<" -2 -format "$(MESH_2D_FORMAT)" -setnumber level "$*" -o "$@"
 
-$(MESH_DIR)/navierstokes3D_L%.msh: scripts/flow_past_cylinder_3d.geo | $(MESH_STAMP)
+$(MESH_DIR)/navierstokes3D_L%.msh: scripts/flow_past_cylinder_3d.geo | $(MESH_STAMP) $(GMSH_PREREQ)
 	$(GMSH) "$<" -3 -format "$(MESH_3D_FORMAT)" -setnumber level "$*" -o "$@"
