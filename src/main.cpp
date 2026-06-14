@@ -1,5 +1,6 @@
 #include "FlowPastCylinder2D.hpp"
 #include "FlowPastCylinder3D.hpp"
+#include "benchmarks/BenchmarkConfig.hpp"
 
 #include <fstream>
 #include <stdexcept>
@@ -63,28 +64,15 @@ namespace
             return result;
         };
 
-        Problem problem(parameters.mesh_file_name,
-                        parameters.degree_velocity,
-                        parameters.degree_pressure,
-                        parameters.nu,
-                        f,
-                        parameters.T,
-                        parameters.theta,
-                        parameters.delta_t);
-        problem.set_nonlinear_solver_parameters(parameters.nonlinear_max_iterations,
-                                                parameters.nonlinear_tolerance);
-        problem.set_nonlinear_solver_strategy(parameters.nonlinear_method,
-                                              parameters.picard_relaxation);
-        problem.set_linear_solver_parameters(parameters.gmres_restart_length,
-                                             parameters.pressure_regularization,
-                                             parameters.linear_max_iterations,
-                                             parameters.linear_relative_tolerance,
-                                             parameters.linear_absolute_tolerance);
+        Problem problem(parameters.mesh_file_name, parameters.degree_velocity, parameters.degree_pressure,  parameters.nu, f, parameters.T, parameters.theta, parameters.delta_t);
+        problem.set_nonlinear_solver_parameters(parameters.nonlinear_max_iterations, parameters.nonlinear_tolerance);
+        problem.set_nonlinear_solver_strategy(parameters.nonlinear_method, parameters.picard_relaxation);
+        problem.set_linear_solver_parameters(parameters.gmres_restart_length, parameters.pressure_regularization, parameters.linear_max_iterations, parameters.linear_relative_tolerance, parameters.linear_absolute_tolerance);
         problem.set_preconditioner(parameters.preconditioner);
-        problem.set_simple_pressure_relaxation(
-          parameters.simple_pressure_relaxation);
+        problem.set_simple_pressure_relaxation(parameters.simple_pressure_relaxation);
         problem.set_preconditioner_iterations(parameters.preconditioner_iterations);
         problem.set_stabilization_options(parameters.stabilization);
+        BenchmarkConfig::apply_to(problem, parameters, parameter_file);
 
         Case benchmark_case(parameters);
         benchmark_case.apply_to(problem);

@@ -35,6 +35,9 @@ class PCD : public NavierStokesPreconditioner
             F_p = data.pressure_convection_diffusion;
             velocity_max_iterations =data.preconditioner_iterations.pcd_velocity_max_iterations;
             pressure_max_iterations = data.preconditioner_iterations.pcd_pressure_max_iterations;
+            velocity_relative_tolerance =data.preconditioner_iterations.pcd_velocity_relative_tolerance;
+            pressure_relative_tolerance =data.preconditioner_iterations.pcd_pressure_relative_tolerance;
+            absolute_tolerance =data.preconditioner_iterations.preconditioner_absolute_tolerance;
             
             // ILU approximations of the inverses of F, M_p and A_p
             preconditioner_F.initialize(*F);
@@ -98,8 +101,8 @@ class PCD : public NavierStokesPreconditioner
                       fp_times_mp_inverse_rhs,
                       preconditioner_Ap,
                       pressure_max_iterations,
-                      1e-3,
-                      1e-12);
+                      pressure_relative_tolerance,
+                      absolute_tolerance);
             });
 
             // Step 2: r_u = r_u + B^T p.
@@ -115,8 +118,8 @@ class PCD : public NavierStokesPreconditioner
                       corrected_velocity_rhs,
                       preconditioner_F,
                       velocity_max_iterations,
-                      1e-2,
-                      1e-12);
+                      velocity_relative_tolerance,
+                      absolute_tolerance);
             });
 
             dst.block(0) = velocity_part;
@@ -137,7 +140,10 @@ class PCD : public NavierStokesPreconditioner
             solution = 0.0;
 
             if (rhs_norm == 0.0)
+            {
+                record_inner_solve(0, true);
                 return true;
+            }
 
             SolverControl solver_control(
               max_iterations,
@@ -147,10 +153,12 @@ class PCD : public NavierStokesPreconditioner
             try
             {
                 solver.solve(matrix, solution, rhs, preconditioner);
+                record_inner_solve(solver_control.last_step(), true);
                 return true;
             }
             catch (const SolverControl::NoConvergence &)
             {
+                record_inner_solve(solver_control.last_step(), false);
                 return false;
             }
         }
@@ -167,6 +175,9 @@ class PCD : public NavierStokesPreconditioner
 
         unsigned int velocity_max_iterations = 10;
         unsigned int pressure_max_iterations = 20;
+        double velocity_relative_tolerance = 1e-2;
+        double pressure_relative_tolerance = 1e-3;
+        double absolute_tolerance = 1e-12;
 };
 
 #endif

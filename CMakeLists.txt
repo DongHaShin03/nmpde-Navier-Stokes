@@ -4,6 +4,7 @@ project(nmpde-Navier-Stokes LANGUAGES CXX C)
 include(common/cmake-common.cmake)
 
 set(NAVIER_STOKES_SOURCES
+  src/benchmarks/BenchmarkRecorder.cpp
   src/NavierStokes.cpp
   src/NavierStokes2D.cpp
   src/NavierStokes3D.cpp
@@ -29,6 +30,7 @@ if(CMAKE_GENERATOR MATCHES "Makefiles")
     "${CMAKE_BINARY_DIR}/main"
     "${CMAKE_BINARY_DIR}/results"
     "${CMAKE_BINARY_DIR}/results_3d"
+    "${CMAKE_BINARY_DIR}/benchmark_results"
     "${CMAKE_BINARY_DIR}/coefficients.txt"
     "${CMAKE_BINARY_DIR}/coefficients_3d.txt"
     "${CMAKE_BINARY_DIR}/solution.pvd"

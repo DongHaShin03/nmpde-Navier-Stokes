@@ -1,6 +1,6 @@
 subsection Mesh and discretization
   set Dimension = 3
-  set Mesh file = ../mesh/navierstokes3D_L1.msh
+  set Mesh file = ../mesh/navierstokes3D_L0.msh
   set Velocity degree = 2
   set Pressure degree = 1
   set Final time = 7
@@ -22,13 +22,22 @@ subsection Solver
   set SIMPLE pressure relaxation = 0.7
   set Block triangular velocity max iterations = 15
   set Block triangular Schur max iterations = 20
+  set Block triangular velocity relative tolerance = 1e-2
+  set Block triangular Schur relative tolerance = 1e-3
   set SIMPLE velocity max iterations = 5
   set SIMPLE Schur max iterations = 10
+  set SIMPLE velocity relative tolerance = 1e-2
+  set SIMPLE Schur relative tolerance = 1e-3
   set PCD velocity max iterations = 10
   set PCD pressure max iterations = 20
+  set PCD velocity relative tolerance = 1e-2
+  set PCD pressure relative tolerance = 1e-3
   set Yosida velocity max iterations = 10000
   set Yosida Schur max iterations = 10000
   set Yosida correction max iterations = 10000
+  set Yosida relative tolerance = 1e-2
+  set Preconditioner absolute tolerance = 1e-12
+  set Yosida absolute tolerance = 1e-14
 end
 
 subsection Stabilization
@@ -58,4 +67,13 @@ subsection Boundary ids
   set Outlet = 2
   set Walls = 3
   set Cylinder = 5
+end
+
+subsection Output
+  set Output directory = benchmark_results/default_run
+  set Run id = default_run
+  set Benchmark id = manual_3d
+  set Mesh name = 3D_L0
+  set Write solution output = true
+  set Statistics start time = 0.0
 end

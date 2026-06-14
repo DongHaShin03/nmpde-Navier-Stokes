@@ -31,6 +31,9 @@ class BlockTriangular : public NavierStokesPreconditioner
             B_T = data.BT;
             velocity_max_iterations =data.preconditioner_iterations.block_triangular_velocity_max_iterations;
             schur_max_iterations =data.preconditioner_iterations.block_triangular_schur_max_iterations;
+            velocity_relative_tolerance =data.preconditioner_iterations.block_triangular_velocity_relative_tolerance;
+            schur_relative_tolerance =data.preconditioner_iterations.block_triangular_schur_relative_tolerance;
+            absolute_tolerance = data.preconditioner_iterations.preconditioner_absolute_tolerance;
 
             diag_F_inv.reinit(data.solution_template->block(0));
             neg_diag_F_inv.reinit(data.solution_template->block(0));
@@ -73,8 +76,8 @@ class BlockTriangular : public NavierStokesPreconditioner
                       src.block(1),
                       preconditioner_S,
                       schur_max_iterations,
-                      1e-3,
-                      1e-12);
+                      schur_relative_tolerance,
+                      absolute_tolerance);
             });
 
             // Step 2: solve r_u = r_u - B_T z_p.
@@ -90,8 +93,8 @@ class BlockTriangular : public NavierStokesPreconditioner
                       velocity_rhs,
                       preconditioner_F,
                       velocity_max_iterations,
-                      1e-2,
-                      1e-12);
+                      velocity_relative_tolerance,
+                      absolute_tolerance);
             });
 
             dst.block(0) = velocity_part;
@@ -112,7 +115,10 @@ class BlockTriangular : public NavierStokesPreconditioner
             solution = 0.0;
 
             if (rhs_norm == 0.0)
+            {
+                record_inner_solve(0, true);
                 return true;
+            }
 
             SolverControl solver_control(
               max_iterations,
@@ -122,10 +128,12 @@ class BlockTriangular : public NavierStokesPreconditioner
             try
             {
                 solver.solve(matrix, solution, rhs, preconditioner);
+                record_inner_solve(solver_control.last_step(), true);
                 return true;
             }
             catch (const SolverControl::NoConvergence &)
             {
+                record_inner_solve(solver_control.last_step(), false);
                 return false;
             }
         }
@@ -143,6 +151,9 @@ class BlockTriangular : public NavierStokesPreconditioner
         TrilinosWrappers::PreconditionILU preconditioner_S;
         unsigned int velocity_max_iterations = 100;
         unsigned int schur_max_iterations = 250;
+        double velocity_relative_tolerance = 1e-2;
+        double schur_relative_tolerance = 1e-3;
+        double absolute_tolerance = 1e-12;
 };
 
 #endif

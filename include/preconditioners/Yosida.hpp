@@ -30,6 +30,8 @@ class Yosida : public NavierStokesPreconditioner
             velocity_max_iterations = data.preconditioner_iterations.yosida_velocity_max_iterations;
             schur_max_iterations = data.preconditioner_iterations.yosida_schur_max_iterations;
             correction_max_iterations = data.preconditioner_iterations.yosida_correction_max_iterations;
+            relative_tolerance =data.preconditioner_iterations.yosida_relative_tolerance;
+            absolute_tolerance =data.preconditioner_iterations.yosida_absolute_tolerance;
                                                 
 
             diag_D_inv.reinit(data.solution_template->block(0));
@@ -54,8 +56,6 @@ class Yosida : public NavierStokesPreconditioner
         void vmult(TrilinosWrappers::MPI::BlockVector       &dst,
                    const TrilinosWrappers::MPI::BlockVector &src) const override
         {
-            const double relative_tolerance = 1e-2;
-
             TrilinosWrappers::MPI::Vector yu;
             yu.reinit(src.block(0));
             TrilinosWrappers::MPI::Vector yp;
@@ -68,7 +68,7 @@ class Yosida : public NavierStokesPreconditioner
             correction_u.reinit(src.block(0));
 
             SolverControl solver_F(velocity_max_iterations,
-                                   std::max(1e-14,
+                                   std::max(absolute_tolerance,
                                             relative_tolerance *
                                               src.block(0).l2_norm()));
             SolverGMRES<TrilinosWrappers::MPI::Vector> solver_gmres(solver_F);
@@ -76,7 +76,16 @@ class Yosida : public NavierStokesPreconditioner
             // Step 1: y_u ~= F^{-1} r_u.
             time_section("yosida_vmult/f_solve", [&]()
             {
-                solver_gmres.solve(*F, yu, src.block(0), preconditioner_F);
+                try
+                {
+                    solver_gmres.solve(*F, yu, src.block(0), preconditioner_F);
+                    record_inner_solve(solver_F.last_step(), true);
+                }
+                catch (const SolverControl::NoConvergence &)
+                {
+                    record_inner_solve(solver_F.last_step(), false);
+                    throw;
+                }
             });
 
             // Step 2: r_p = r_p - B y_u.
@@ -85,14 +94,23 @@ class Yosida : public NavierStokesPreconditioner
             tmp_p += src.block(1);
 
             SolverControl solver_S(schur_max_iterations,
-                                   std::max(1e-14,
+                                   std::max(absolute_tolerance,
                                             relative_tolerance * tmp_p.l2_norm()));
             SolverGMRES<TrilinosWrappers::MPI::Vector> solver_gmres_S(solver_S);
 
             // Step 2: y_p ~= S_Y^(-1) r_p.
             time_section("yosida_vmult/schur_solve", [&]()
             {
-                solver_gmres_S.solve(negative_S_tilde, yp, tmp_p, preconditioner_S);
+                try
+                {
+                    solver_gmres_S.solve(negative_S_tilde, yp, tmp_p, preconditioner_S);
+                    record_inner_solve(solver_S.last_step(), true);
+                }
+                catch (const SolverControl::NoConvergence &)
+                {
+                    record_inner_solve(solver_S.last_step(), false);
+                    throw;
+                }
             });
 
             dst.block(1) = yp;
@@ -102,14 +120,23 @@ class Yosida : public NavierStokesPreconditioner
             B_T->vmult(tmp_u, dst.block(1));
 
             SolverControl solver_F2(correction_max_iterations,
-                                    std::max(1e-14,
+                                    std::max(absolute_tolerance,
                                              relative_tolerance *
                                                tmp_u.l2_norm()));
             SolverGMRES<TrilinosWrappers::MPI::Vector> solver_gmres2(solver_F2);
             
             time_section("yosida_vmult/f_correction_solve", [&]()
             {
-                solver_gmres2.solve(*F, correction_u, tmp_u, preconditioner_F);
+                try
+                {
+                    solver_gmres2.solve(*F, correction_u, tmp_u, preconditioner_F);
+                    record_inner_solve(solver_F2.last_step(), true);
+                }
+                catch (const SolverControl::NoConvergence &)
+                {
+                    record_inner_solve(solver_F2.last_step(), false);
+                    throw;
+                }
             });
 
             // Final block-triangular Yosida application:
@@ -134,6 +161,8 @@ class Yosida : public NavierStokesPreconditioner
         unsigned int velocity_max_iterations = 100000;
         unsigned int schur_max_iterations = 100000;
         unsigned int correction_max_iterations = 100000;
+        double relative_tolerance = 1e-2;
+        double absolute_tolerance = 1e-14;
 };
 
 #endif

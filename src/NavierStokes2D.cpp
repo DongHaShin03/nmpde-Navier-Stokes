@@ -1,5 +1,6 @@
 #include "NavierStokes2D.hpp"
 
+#include <limits>
 #include <stdexcept>
 
 void NavierStokes2D::set_force_coefficient_parameters(
@@ -98,31 +99,19 @@ void NavierStokes2D::compute_forces()
     const double C_D = total_force_x / denominator;
     const double C_L = total_force_y / denominator;
 
-    // ----- QUI PRESSIONE DELTA P -----
-    // Calcolare p_front - p_back nei punti benchmark davanti/dietro il cilindro.
-    // Dopo l'implementazione, salvare Delta p insieme a Cd/Cl a ogni time step.
-
-    // ----- QUI NORMA DIVERGENZA -----
-    // Calcolare ||div(u_h)||_L2 come metrica di incomprimibilita'. Dopo il cambio,
-    // usarla per confrontare grad-div disattivo e gamma_grad_div diversi.
-
-    // ----- QUI STROUHAL / FREQUENZA LIFT -----
-    // Per run instazionari, post-processare Cl(t) per stimare frequenza e St.
-    // Dopo l'implementazione, produrre il valore medio su una finestra periodica.
+    // DFG/Schaefer-Turek pressure-probe points on the cylinder.
+    const Point<dim> front_pressure_point(0.15, 0.2);
+    const Point<dim> back_pressure_point(0.25, 0.2);
+    const double delta_pressure = this->compute_pressure_difference(front_pressure_point, back_pressure_point);
 
     if (this->mpi_rank == 0)
     {
         this->pcout << "   Step " << this->timestep_number << " Forces: Drag="
                     << total_force_x << ", Lift=" << total_force_y << std::endl;
         this->pcout << "   Coeffs: Cd=" << C_D << ", Cl=" << C_L << std::endl;
-
-        // ----- QUI OUTPUT CSV METRICHE -----
-        // Sostituire/affiancare coefficients.txt con un CSV con header:
-        // time,Cd,Cl,DeltaP,divL2,gmres_iters,nonlinear_iters,step_time.
-        // Dopo il cambio, ogni benchmark deve essere confrontabile con script.
-        std::ofstream file("coefficients.txt", std::ios::app);
-        file << this->time << " " << C_D << " " << C_L << std::endl;
     }
+
+    this->write_benchmark_metrics(C_D, C_L, std::numeric_limits<double>::quiet_NaN(), delta_pressure, force_coefficient_reference_velocity, force_coefficient_reference_length);
 }
 
 std::string NavierStokes2D::simulation_name() const
@@ -132,6 +121,5 @@ std::string NavierStokes2D::simulation_name() const
 
 std::string NavierStokes2D::output_folder() const
 {
-    return "results";
+    return benchmark_output_directory();
 }
-

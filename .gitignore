@@ -61,6 +61,9 @@ src/Section3.tex
 main
 main2
 main3
-
 /build
 /tools
+__pycache__/
+*.pyc
+benchmark_results/
+

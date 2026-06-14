@@ -31,7 +31,7 @@ void FlowPastCylinder3DParser::declare_parameters(ParameterHandler &prm)
     prm.declare_entry("Linear relative tolerance", "1e-6", Patterns::Double(0.0));
     prm.declare_entry("Linear absolute tolerance", "1e-10", Patterns::Double(0.0));
     prm.declare_entry("Preconditioner",
-                      "pcd",
+                      "simple",
                       Patterns::Selection(
                         "simple|block_triangular|yosida|pcd"));
     prm.declare_entry("SIMPLE pressure relaxation",
@@ -43,18 +43,36 @@ void FlowPastCylinder3DParser::declare_parameters(ParameterHandler &prm)
     prm.declare_entry("Block triangular Schur max iterations",
                       "250",
                       Patterns::Integer(1));
+    prm.declare_entry("Block triangular velocity relative tolerance",
+                      "1e-2",
+                      Patterns::Double(0.0));
+    prm.declare_entry("Block triangular Schur relative tolerance",
+                      "1e-3",
+                      Patterns::Double(0.0));
     prm.declare_entry("SIMPLE velocity max iterations",
                       "5",
                       Patterns::Integer(1));
     prm.declare_entry("SIMPLE Schur max iterations",
                       "20",
                       Patterns::Integer(1));
+    prm.declare_entry("SIMPLE velocity relative tolerance",
+                      "1e-2",
+                      Patterns::Double(0.0));
+    prm.declare_entry("SIMPLE Schur relative tolerance",
+                      "1e-3",
+                      Patterns::Double(0.0));
     prm.declare_entry("PCD velocity max iterations",
                       "10",
                       Patterns::Integer(1));
     prm.declare_entry("PCD pressure max iterations",
                       "20",
                       Patterns::Integer(1));
+    prm.declare_entry("PCD velocity relative tolerance",
+                      "1e-2",
+                      Patterns::Double(0.0));
+    prm.declare_entry("PCD pressure relative tolerance",
+                      "1e-3",
+                      Patterns::Double(0.0));
     prm.declare_entry("Yosida velocity max iterations",
                       "100000",
                       Patterns::Integer(1));
@@ -64,6 +82,15 @@ void FlowPastCylinder3DParser::declare_parameters(ParameterHandler &prm)
     prm.declare_entry("Yosida correction max iterations",
                       "100000",
                       Patterns::Integer(1));
+    prm.declare_entry("Yosida relative tolerance",
+                      "1e-2",
+                      Patterns::Double(0.0));
+    prm.declare_entry("Preconditioner absolute tolerance",
+                      "1e-12",
+                      Patterns::Double(0.0));
+    prm.declare_entry("Yosida absolute tolerance",
+                      "1e-14",
+                      Patterns::Double(0.0));
     prm.leave_subsection();
 
     prm.enter_subsection("Stabilization");
@@ -93,6 +120,15 @@ void FlowPastCylinder3DParser::declare_parameters(ParameterHandler &prm)
     prm.declare_entry("Outlet", "2", Patterns::Integer(0));
     prm.declare_entry("Walls", "3", Patterns::Integer(0));
     prm.declare_entry("Cylinder", "5", Patterns::Integer(0));
+    prm.leave_subsection();
+
+    prm.enter_subsection("Output");
+    prm.declare_entry("Output directory","benchmark_results/default_run",Patterns::Anything());
+    prm.declare_entry("Run id", "default_run", Patterns::Anything());
+    prm.declare_entry("Benchmark id", "unknown", Patterns::Anything());
+    prm.declare_entry("Mesh name", "unknown", Patterns::Anything());
+    prm.declare_entry("Write solution output", "true", Patterns::Bool());
+    prm.declare_entry("Statistics start time", "0.0", Patterns::Double(0.0));
     prm.leave_subsection();
 }
 
@@ -136,15 +172,27 @@ FlowPastCylinder3DConfig FlowPastCylinder3DParser::parse_parameters(
     config.preconditioner_iterations.block_triangular_schur_max_iterations =
       static_cast<unsigned int>(
         prm.get_integer("Block triangular Schur max iterations"));
+    config.preconditioner_iterations.block_triangular_velocity_relative_tolerance =
+      prm.get_double("Block triangular velocity relative tolerance");
+    config.preconditioner_iterations.block_triangular_schur_relative_tolerance =
+      prm.get_double("Block triangular Schur relative tolerance");
     config.preconditioner_iterations.simple_velocity_max_iterations =
       static_cast<unsigned int>(
         prm.get_integer("SIMPLE velocity max iterations"));
     config.preconditioner_iterations.simple_schur_max_iterations =
       static_cast<unsigned int>(prm.get_integer("SIMPLE Schur max iterations"));
+    config.preconditioner_iterations.simple_velocity_relative_tolerance =
+      prm.get_double("SIMPLE velocity relative tolerance");
+    config.preconditioner_iterations.simple_schur_relative_tolerance =
+      prm.get_double("SIMPLE Schur relative tolerance");
     config.preconditioner_iterations.pcd_velocity_max_iterations =
       static_cast<unsigned int>(prm.get_integer("PCD velocity max iterations"));
     config.preconditioner_iterations.pcd_pressure_max_iterations =
       static_cast<unsigned int>(prm.get_integer("PCD pressure max iterations"));
+    config.preconditioner_iterations.pcd_velocity_relative_tolerance =
+      prm.get_double("PCD velocity relative tolerance");
+    config.preconditioner_iterations.pcd_pressure_relative_tolerance =
+      prm.get_double("PCD pressure relative tolerance");
     config.preconditioner_iterations.yosida_velocity_max_iterations =
       static_cast<unsigned int>(
         prm.get_integer("Yosida velocity max iterations"));
@@ -154,6 +202,12 @@ FlowPastCylinder3DConfig FlowPastCylinder3DParser::parse_parameters(
     config.preconditioner_iterations.yosida_correction_max_iterations =
       static_cast<unsigned int>(
         prm.get_integer("Yosida correction max iterations"));
+    config.preconditioner_iterations.yosida_relative_tolerance =
+      prm.get_double("Yosida relative tolerance");
+    config.preconditioner_iterations.preconditioner_absolute_tolerance =
+      prm.get_double("Preconditioner absolute tolerance");
+    config.preconditioner_iterations.yosida_absolute_tolerance =
+      prm.get_double("Yosida absolute tolerance");
     prm.leave_subsection();
 
     prm.enter_subsection("Stabilization");
@@ -193,6 +247,15 @@ FlowPastCylinder3DConfig FlowPastCylinder3DParser::parse_parameters(
       static_cast<types::boundary_id>(prm.get_integer("Cylinder"));
     prm.leave_subsection();
 
+    prm.enter_subsection("Output");
+    config.output_directory = prm.get("Output directory");
+    config.run_id = prm.get("Run id");
+    config.benchmark_id = prm.get("Benchmark id");
+    config.mesh_name = prm.get("Mesh name");
+    config.write_solution_output = prm.get_bool("Write solution output");
+    config.statistics_start_time = prm.get_double("Statistics start time");
+    prm.leave_subsection();
+
     return config;
 }
 
@@ -218,8 +281,7 @@ FlowPastCylinder3DInlet::FlowPastCylinder3DInlet(
   , ramp_time(ramp_time_)
 {}
 
-void FlowPastCylinder3DInlet::vector_value(const Point<3> &point,
-                                           Vector<double> &values) const
+void FlowPastCylinder3DInlet::vector_value(const Point<3> &point,Vector<double> &values) const
 {
     double ramp_factor = 1.0;
     if (ramp_time > 0.0)
@@ -265,10 +327,9 @@ double FlowPastCylinder3DOutletPressure::value(const Point<3> &,
 
 FlowPastCylinder3DCase::FlowPastCylinder3DCase(
   const FlowPastCylinder3DConfig &parameters)
-  : force_coefficient_reference_velocity(
-      parameters.force_coefficient_reference_velocity)
-  , force_coefficient_reference_area(parameters.force_coefficient_reference_length *
-                                     parameters.force_coefficient_reference_span)
+  : force_coefficient_reference_velocity(parameters.force_coefficient_reference_velocity)
+  , force_coefficient_reference_area(parameters.force_coefficient_reference_length * parameters.force_coefficient_reference_span)
+  , force_coefficient_reference_length(parameters.force_coefficient_reference_length)
   , inlet_boundary_id(parameters.inlet_boundary_id)
   , outlet_boundary_id(parameters.outlet_boundary_id)
   , walls_boundary_id(parameters.walls_boundary_id)
@@ -289,5 +350,6 @@ void FlowPastCylinder3DCase::apply_to(NavierStokes3D &problem)
     problem.neumann[outlet_boundary_id] = &outlet;
     problem.set_force_coefficient_parameters(force_coefficient_reference_velocity,
                                              force_coefficient_reference_area,
+                                             force_coefficient_reference_length,
                                              cylinder_boundary_id);
 }
