@@ -47,15 +47,23 @@
 *.vtu
 *.pvtu
 
-#md and txt
-*.txt
-*.md
+# Local notes / generated report extracts
+.codex_tmp_report*.txt
+FLOW_PAST_CYLINDER_BENCHMARK_TESTS.txt
+NAVIERSTOKES_BENCHMARK_ROADMAP.md
+src/navier_stokes_cylinder_full_plan_with_preconditioners.md
+src/Report_NMPDE*.pdf
+src/Section2*.tex
+src/Section3.tex
+*:Zone.Identifier
 
 #exec
 main
 main2
 main3
+/build
+/tools
 __pycache__/
 *.pyc
-/build
 benchmark_results/
+
