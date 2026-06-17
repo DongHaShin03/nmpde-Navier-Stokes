@@ -27,7 +27,6 @@ struct RequiredMatrices
     // -B^T = -(p, div(phi_j))
     const TrilinosWrappers::SparseMatrix *BT                 = nullptr;
 
-    // Vector layout template for auxiliary distributed vectors
     const TrilinosWrappers::MPI::BlockVector *solution_template = nullptr;
 
     // SIMPLE pressure correction relaxation:

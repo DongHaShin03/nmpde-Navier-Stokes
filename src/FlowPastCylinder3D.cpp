@@ -293,9 +293,6 @@ void FlowPastCylinder3DInlet::vector_value(const Point<3> &point,Vector<double> 
     const double y = std::clamp(point[1], 0.0, channel_height);
     const double z = std::clamp(point[2], 0.0, channel_width);
 
-    // 3D Schaefer-Turek inlet profile on a rectangular cross-section:
-    // U_x(y,z) = 16 U_m y(H-y) z(W-z) / (H^2 W^2), U_y = U_z = 0.
-    // For H=W and U_m=2.25 the cross-section mean velocity is 1.
     const double profile =
       16.0 * inlet_velocity *
       y * (channel_height - y) *
