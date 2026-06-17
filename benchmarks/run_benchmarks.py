@@ -119,6 +119,11 @@ def apply_sweep_value(config, key, value, defaults, variant):
         variant["tolerance_profile_name"] = value.get("name", "tolerance")
         return
 
+    if key == "config_profile":
+        config.update({k: v for k, v in value.items() if k != "name"})
+        variant["config_profile_name"] = value.get("name", "profile")
+        return
+
     config[key] = value
 
 
@@ -156,6 +161,10 @@ def make_run_id(benchmark_id, config, variant):
     if tolerance_profile_name:
         parts.append(sanitize_token(tolerance_profile_name))
 
+    config_profile_name = variant.get("config_profile_name")
+    if config_profile_name:
+        parts.append(sanitize_token(config_profile_name))
+
     stabilization_name = variant.get("stabilization_name")
     if stabilization_name and stabilization_name != "baseline":
         parts.append(sanitize_token(stabilization_name))
@@ -171,7 +180,20 @@ def materialize_run(benchmark_id, config, defaults, output_root, variant):
     config = deepcopy(config)
     mesh_catalog = defaults.get("mesh_catalog", {})
     mesh_name = str(config.get("mesh", config.get("mesh_name", "unknown")))
-    mesh_file = config.get("mesh_file", mesh_catalog.get(mesh_name, mesh_name))
+    if "mesh_file" in config:
+        mesh_file = config["mesh_file"]
+    elif mesh_name in mesh_catalog:
+        mesh_file = mesh_catalog[mesh_name]
+    else:
+        mesh_path = Path(mesh_name)
+        if mesh_path.parent != Path(".") or mesh_path.suffix:
+            mesh_file = mesh_name
+        else:
+            known_meshes = ", ".join(sorted(str(key) for key in mesh_catalog))
+            raise SystemExit(
+                f"Unknown mesh key '{mesh_name}'. Add it to defaults.mesh_catalog "
+                f"or set mesh_file explicitly. Known mesh keys: {known_meshes}"
+            )
 
     if "nu" not in config and "Re" in config:
         config["nu"] = reynolds_to_nu(defaults, config, config["Re"])
@@ -509,6 +531,29 @@ def run_one(config, solver, solver_cwd, mpirun, dry_run):
     return result.returncode
 
 
+def validation_setup_label(config):
+    benchmark_id = str(config.get("benchmark_id", ""))
+    if not benchmark_id.startswith("V"):
+        return ""
+
+    fields = []
+    if "inlet_velocity" in config:
+        fields.append(f"Uin={config['inlet_velocity']}")
+    if "Re" in config:
+        fields.append(f"Re={config['Re']}")
+    if "inlet_ramp_time" in config:
+        try:
+            ramp_time = float(config["inlet_ramp_time"])
+        except (TypeError, ValueError):
+            ramp_time = 0.0
+        if ramp_time > 0.0:
+            fields.append(f"ramp=yes, Tramp={config['inlet_ramp_time']}")
+        else:
+            fields.append("ramp=no")
+
+    return f" ({', '.join(fields)})" if fields else ""
+
+
 def parse_args():
     parser = argparse.ArgumentParser(description="Run Navier-Stokes benchmark sweeps.")
     parser.add_argument("--yaml", default="benchmarks/benchmarks.yaml", help="Benchmark YAML file.")
@@ -593,10 +638,10 @@ def main():
         failed_path = output_dir / "FAILED"
 
         if args.skip_existing and summary_path.exists() and not failed_path.exists():
-            print(f"[{index}/{len(unique_runs)}] skip existing {config['run_id']}")
+            print(f"[{index}/{len(unique_runs)}] skip existing {config['run_id']}{validation_setup_label(config)}")
             continue
 
-        print(f"[{index}/{len(unique_runs)}] run {config['run_id']}")
+        print(f"[{index}/{len(unique_runs)}] run {config['run_id']}{validation_setup_label(config)}")
         returncode = run_one(config, solver, solver_cwd, mpirun, args.dry_run)
         if returncode != 0:
             failures += 1

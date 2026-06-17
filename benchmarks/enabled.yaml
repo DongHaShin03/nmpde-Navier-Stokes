@@ -19,8 +19,8 @@ benchmarks:
   P7: true
   P8: true
   P9: true
-  T_SIMPLE: false
-  T_BLOCK: false
-  T_PCD: false
-  T_YOSIDA: false
-  T_ALL: false
+  T_SIMPLE_MAXITER: false
+  T_BLOCK_MAXITER: false
+  T_PCD_MAXITER: false
+  T_YOSIDA_MAXITER: false
+  T_ALL_MAXITER: false

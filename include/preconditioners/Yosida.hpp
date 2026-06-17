@@ -84,7 +84,6 @@ class Yosida : public NavierStokesPreconditioner
                 catch (const SolverControl::NoConvergence &)
                 {
                     record_inner_solve(solver_F.last_step(), false);
-                    throw;
                 }
             });
 
@@ -109,7 +108,6 @@ class Yosida : public NavierStokesPreconditioner
                 catch (const SolverControl::NoConvergence &)
                 {
                     record_inner_solve(solver_S.last_step(), false);
-                    throw;
                 }
             });
 
@@ -135,7 +133,6 @@ class Yosida : public NavierStokesPreconditioner
                 catch (const SolverControl::NoConvergence &)
                 {
                     record_inner_solve(solver_F2.last_step(), false);
-                    throw;
                 }
             });
 

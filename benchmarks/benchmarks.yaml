@@ -5,8 +5,8 @@ defaults:
   mesh_catalog:
     L0: ../mesh/navierstokes_L0.msh
     L1: ../mesh/navierstokes_L1.msh
-    L2: ../mesh/navierstokes_L2.msh
     3D_L0: ../mesh/navierstokes3D_L0.msh
+    3D_L1: ../mesh/navierstokes3D_L1.msh
   reynolds_viscosity:
     20: 0.005
     100: 0.001
@@ -33,11 +33,11 @@ defaults:
     nonlinear_iterations: 2
     nonlinear_tolerance: 1e-6
     picard_relaxation: 1.0
-    preconditioner: simple
+    preconditioner: pcd
     simple_pressure_relaxation: 0.3
     temam: true
     grad_div: true
-    gamma_grad_div: 0.05
+    gamma_grad_div: 0.01
     supg: true
     linear_relative_tolerance: 1e-6
     linear_absolute_tolerance: 1e-10
@@ -53,21 +53,21 @@ defaults:
     supg: true
     linear_relative_tolerance: 1e-6
     block_triangular_velocity_max_iterations: 15
-    block_triangular_schur_max_iterations: 20
-    block_triangular_velocity_relative_tolerance: 1e-2
-    block_triangular_schur_relative_tolerance: 1e-3
-    simple_velocity_max_iterations: 5
+    block_triangular_schur_max_iterations: 15
+    block_triangular_velocity_relative_tolerance: 5e-1
+    block_triangular_schur_relative_tolerance: 5e-1
+    simple_velocity_max_iterations: 10
     simple_schur_max_iterations: 10
-    simple_velocity_relative_tolerance: 1e-2
-    simple_schur_relative_tolerance: 1e-3
-    pcd_velocity_max_iterations: 10
-    pcd_pressure_max_iterations: 20
-    pcd_velocity_relative_tolerance: 1e-2
-    pcd_pressure_relative_tolerance: 1e-3
+    simple_velocity_relative_tolerance: 5e-1
+    simple_schur_relative_tolerance: 5e-1
+    pcd_velocity_max_iterations: 30
+    pcd_pressure_max_iterations: 30
+    pcd_velocity_relative_tolerance: 5e-1
+    pcd_pressure_relative_tolerance: 5e-1
     yosida_velocity_max_iterations: 10000
     yosida_schur_max_iterations: 10000
     yosida_correction_max_iterations: 10000
-    yosida_relative_tolerance: 1e-2
+    yosida_relative_tolerance: 5e-1
     preconditioner_absolute_tolerance: 1e-12
     yosida_absolute_tolerance: 1e-14
     mpi_ranks: 4
@@ -85,7 +85,7 @@ benchmarks:
       reference_velocity: 1.0
       Re: 100
       nu: 0.001
-      preconditioner: simple
+      preconditioner: pcd
 
   V1:
     previous_id: B1
@@ -98,7 +98,7 @@ benchmarks:
       reference_velocity: 0.2
       Re: 20
       nu: 0.001
-      preconditioner: simple
+      preconditioner: pcd
 
   V2:
     previous_id: B3
@@ -112,7 +112,7 @@ benchmarks:
       reference_velocity: 1.0
       Re: 100
       nu: 0.001
-      preconditioner: simple
+      preconditioner: pcd
 
   V3:
     previous_id: B2
@@ -125,7 +125,7 @@ benchmarks:
       reference_velocity: 1.0
       Re: 100
       nu: 0.001
-      preconditioner: simple
+      preconditioner: pcd
 
   V4:
     previous_id: B4
@@ -138,7 +138,7 @@ benchmarks:
       reference_velocity: 1.0
       Re: 100
       nu: 0.001
-      preconditioner: simple
+      preconditioner: pcd
     sweep:
       mesh: [L0, L1]
 
@@ -153,7 +153,7 @@ benchmarks:
       reference_velocity: 1.0
       Re: 100
       nu: 0.001
-      preconditioner: simple
+      preconditioner: pcd
     sweep:
       dt: [0.01, 0.005, 0.0025, 0.001, 0.0005] #aggiunto 0.0005
 
@@ -167,7 +167,7 @@ benchmarks:
       inlet_velocity: 1.5
       inlet_ramp_time: 8.0
       reference_velocity: 1.0
-      preconditioner: simple
+      preconditioner: pcd
     sweep:
       Re:
         - {Re: 20, nu: 0.005}
@@ -186,7 +186,7 @@ benchmarks:
       reference_velocity: 1.0
       Re: 100
       nu: 0.001
-      preconditioner: simple
+      preconditioner: pcd
       grad_div: true
     sweep:
       stabilization:
@@ -201,7 +201,7 @@ benchmarks:
     description: Optional 3D validation.
     config:
       dimension: 3
-      mesh: 3D_L0
+      mesh: 3D_L1
       final_time: 8.0
       dt: 0.001
       inlet_velocity: 2.25
@@ -213,32 +213,51 @@ benchmarks:
       reference_span: 0.41
       Re: 100
       nu: 0.001
-      preconditioner: simple
+      preconditioner: pcd
+      mpi_ranks: 8
+
+  V9:
+    description: Reynolds, inlet-velocity, and inlet-ramp sweep on the 2D setup.
+    config:
+      final_time: 8.0
+      statistics_start_time: 0.0
+      dt: 0.005
+      mesh: L0
+      nonlinear_method: oseen
+      nonlinear_iterations: 2
+      preconditioner: pcd
+      write_solution_output: true
+    sweep:
+      config_profile:
+        # ramp_time = 0 gives a constant inlet.  ramp_time = 8 gives the
+        # Schaefer--Turek half-sine pulse over the full [0,8] interval.
+        - {name: uin0p75_const_Re20, inlet_velocity: 0.75, inlet_ramp_time: 0.0, reference_velocity: 0.5, Re: 20, nu: 0.0025}
+        - {name: uin0p75_const_Re100, inlet_velocity: 0.75, inlet_ramp_time: 0.0, reference_velocity: 0.5, Re: 100, nu: 0.0005}
+        - {name: uin0p75_const_Re200, inlet_velocity: 0.75, inlet_ramp_time: 0.0, reference_velocity: 0.5, Re: 200, nu: 0.00025}
+        - {name: uin0p75_ramp8_Re20, inlet_velocity: 0.75, inlet_ramp_time: 8.0, reference_velocity: 0.5, Re: 20, nu: 0.0025}
+        - {name: uin0p75_ramp8_Re100, inlet_velocity: 0.75, inlet_ramp_time: 8.0, reference_velocity: 0.5, Re: 100, nu: 0.0005}
+        - {name: uin0p75_ramp8_Re200, inlet_velocity: 0.75, inlet_ramp_time: 8.0, reference_velocity: 0.5, Re: 200, nu: 0.00025}
+        - {name: uin1p5_const_Re20, inlet_velocity: 1.5, inlet_ramp_time: 0.0, reference_velocity: 1.0, Re: 20, nu: 0.005}
+        - {name: uin1p5_const_Re100, inlet_velocity: 1.5, inlet_ramp_time: 0.0, reference_velocity: 1.0, Re: 100, nu: 0.001}
+        - {name: uin1p5_const_Re200, inlet_velocity: 1.5, inlet_ramp_time: 0.0, reference_velocity: 1.0, Re: 200, nu: 0.0005}
+        - {name: uin1p5_ramp8_Re20, inlet_velocity: 1.5, inlet_ramp_time: 8.0, reference_velocity: 1.0, Re: 20, nu: 0.005}
+        - {name: uin1p5_ramp8_Re100, inlet_velocity: 1.5, inlet_ramp_time: 8.0, reference_velocity: 1.0, Re: 100, nu: 0.001}
+        - {name: uin1p5_ramp8_Re200, inlet_velocity: 1.5, inlet_ramp_time: 8.0, reference_velocity: 1.0, Re: 200, nu: 0.0005}
+        - {name: uin2p25_const_Re20, inlet_velocity: 2.25, inlet_ramp_time: 0.0, reference_velocity: 1.5, Re: 20, nu: 0.0075}
+        - {name: uin2p25_const_Re100, inlet_velocity: 2.25, inlet_ramp_time: 0.0, reference_velocity: 1.5, Re: 100, nu: 0.0015}
+        - {name: uin2p25_const_Re200, inlet_velocity: 2.25, inlet_ramp_time: 0.0, reference_velocity: 1.5, Re: 200, nu: 0.00075}
+        - {name: uin2p25_ramp8_Re20, inlet_velocity: 2.25, inlet_ramp_time: 8.0, reference_velocity: 1.5, Re: 20, nu: 0.0075}
+        - {name: uin2p25_ramp8_Re100, inlet_velocity: 2.25, inlet_ramp_time: 8.0, reference_velocity: 1.5, Re: 100, nu: 0.0015}
+        - {name: uin2p25_ramp8_Re200, inlet_velocity: 2.25, inlet_ramp_time: 8.0, reference_velocity: 1.5, Re: 200, nu: 0.00075}
 
   P0:
-    previous_id: P0
-    description: Preconditioner sanity run.
-    config:
-      final_time: 2.0 #modificato rispetto al pdf (o.5)
-      statistics_start_time: 1.0 #modificato rispetto al pdf (0.0)
-      dt: 0.001
-      inlet_velocity: 1.5
-      inlet_ramp_time: 0.0
-      reference_velocity: 1.0
-      Re: 100
-      nu: 0.001
-      nonlinear_method: oseen
-      nonlinear_iterations: 1
-      write_solution_output: false
-    sweep:
-      preconditioner: [simple, pcd, yosida, block_triangular]
-
+    aliases: [T_MAXITER]
   P1:
     previous_id: P1
     description: Baseline preconditioner comparison.
     config:
-      final_time: 2.0
-      statistics_start_time: 1.0
+      final_time: 1.5
+      statistics_start_time: 0.5
       dt: 0.001
       inlet_velocity: 1.5
       inlet_ramp_time: 0.0
@@ -255,8 +274,8 @@ benchmarks:
     previous_id: P2
     description: Timestep sensitivity.
     config:
-      final_time: 2.0
-      statistics_start_time: 1.0
+      final_time: 1.5
+      statistics_start_time: 0.5
       inlet_velocity: 1.5
       inlet_ramp_time: 0.0
       reference_velocity: 1.0
@@ -273,8 +292,8 @@ benchmarks:
     previous_id: P3
     description: Mesh sensitivity / optimality.
     config:
-      final_time: 2.0
-      statistics_start_time: 1.0
+      final_time: 1.5
+      statistics_start_time: 0.5
       dt: 0.001
       inlet_velocity: 1.5
       inlet_ramp_time: 0.0
@@ -284,6 +303,7 @@ benchmarks:
       nonlinear_method: oseen
       nonlinear_iterations: 1
       write_solution_output: false
+      mpi_ranks: 4
     sweep:
       preconditioner: [simple, pcd, yosida, block_triangular]
       mesh: [L0, L1]
@@ -292,8 +312,8 @@ benchmarks:
     previous_id: P4
     description: Reynolds / viscosity sensitivity.
     config:
-      final_time: 2.0
-      statistics_start_time: 1.0
+      final_time: 1.5
+      statistics_start_time: 0.5
       dt: 0.001
       inlet_velocity: 1.5
       inlet_ramp_time: 0.0
@@ -312,8 +332,8 @@ benchmarks:
     previous_id: P5
     description: SIMPLE relaxation sweep.
     config:
-      final_time: 2.0
-      statistics_start_time: 1.0
+      final_time: 1.5
+      statistics_start_time: 0.5
       dt: 0.001
       inlet_velocity: 1.5
       inlet_ramp_time: 0.0
@@ -331,8 +351,8 @@ benchmarks:
     previous_id: P6
     description: PCD inner tolerance sweep.
     config:
-      final_time: 2.0
-      statistics_start_time: 1.0
+      final_time: 1.5
+      statistics_start_time: 0.5
       dt: 0.001
       inlet_velocity: 1.5
       inlet_ramp_time: 0.0
@@ -350,8 +370,8 @@ benchmarks:
     previous_id: P10
     description: Cost breakdown.
     config:
-      final_time: 2.0
-      statistics_start_time: 1.0
+      final_time: 1.5
+      statistics_start_time: 0.5
       dt: 0.001
       inlet_velocity: 1.5
       inlet_ramp_time: 0.0
@@ -368,8 +388,8 @@ benchmarks:
     previous_id: P9
     description: MPI strong scaling.
     config:
-      final_time: 2.0
-      statistics_start_time: 1.0
+      final_time: 1.5
+      statistics_start_time: 0.5
       dt: 0.001
       inlet_velocity: 1.5
       inlet_ramp_time: 0.0
@@ -389,8 +409,8 @@ benchmarks:
     config:
       dimension: 3
       mesh: 3D_L0
-      final_time: 2.0
-      statistics_start_time: 1.0
+      final_time: 1.5
+      statistics_start_time: 0.5
       dt: 0.005
       inlet_velocity: 2.25
       inlet_ramp_time: 8.0
@@ -404,11 +424,12 @@ benchmarks:
       nonlinear_method: oseen
       nonlinear_iterations: 1
       write_solution_output: false
+      mpi_ranks: 8
     sweep:
       preconditioner: [simple, pcd, block_triangular]
 
-  T_SIMPLE:
-    description: Tuning rapido tolleranze interne SIMPLE.
+  T_SIMPLE_MAXITER:
+    description: Tuning SIMPLE con cap bassi sulle iterazioni interne.
     config:
       final_time: 1.0
       statistics_start_time: 0.5
@@ -423,20 +444,20 @@ benchmarks:
       nonlinear_iterations: 1
       preconditioner: simple
       simple_pressure_relaxation: 0.3
-      simple_velocity_max_iterations: 50
-      simple_schur_max_iterations: 100
+      simple_velocity_relative_tolerance: 5e-1
+      simple_schur_relative_tolerance: 5e-1
       write_solution_output: false
     sweep:
-      tolerance_profile:
-        - {name: v1e_1_s1e_1, simple_velocity_relative_tolerance: 1e-1, simple_schur_relative_tolerance: 1e-1}
-        - {name: v3e_2_s3e_2, simple_velocity_relative_tolerance: 3e-2, simple_schur_relative_tolerance: 3e-2}
-        - {name: v1e_2_s1e_2, simple_velocity_relative_tolerance: 1e-2, simple_schur_relative_tolerance: 1e-2}
-        - {name: v1e_2_s3e_3, simple_velocity_relative_tolerance: 1e-2, simple_schur_relative_tolerance: 3e-3}
-        - {name: v1e_2_s1e_3, simple_velocity_relative_tolerance: 1e-2, simple_schur_relative_tolerance: 1e-3}
-        - {name: v3e_3_s1e_3, simple_velocity_relative_tolerance: 3e-3, simple_schur_relative_tolerance: 1e-3}
+      config_profile:
+        - {name: mi5, simple_velocity_max_iterations: 5, simple_schur_max_iterations: 5}
+        - {name: mi10, simple_velocity_max_iterations: 10, simple_schur_max_iterations: 10}
+        - {name: mi15, simple_velocity_max_iterations: 15, simple_schur_max_iterations: 15}
+        - {name: mi20, simple_velocity_max_iterations: 20, simple_schur_max_iterations: 20}
+        - {name: mi30, simple_velocity_max_iterations: 30, simple_schur_max_iterations: 30}
+        - {name: mi50, simple_velocity_max_iterations: 50, simple_schur_max_iterations: 50}
 
-  T_BLOCK:
-    description: Tuning rapido tolleranze interne block triangular.
+  T_BLOCK_MAXITER:
+    description: Tuning block triangular con cap bassi sulle iterazioni interne.
     config:
       final_time: 1.0
       statistics_start_time: 0.5
@@ -450,20 +471,20 @@ benchmarks:
       nonlinear_method: oseen
       nonlinear_iterations: 1
       preconditioner: block_triangular
-      block_triangular_velocity_max_iterations: 80
-      block_triangular_schur_max_iterations: 160
+      block_triangular_velocity_relative_tolerance: 5e-1
+      block_triangular_schur_relative_tolerance: 5e-1
       write_solution_output: false
     sweep:
-      tolerance_profile:
-        - {name: v1e_1_s1e_1, block_triangular_velocity_relative_tolerance: 1e-1, block_triangular_schur_relative_tolerance: 1e-1}
-        - {name: v3e_2_s3e_2, block_triangular_velocity_relative_tolerance: 3e-2, block_triangular_schur_relative_tolerance: 3e-2}
-        - {name: v1e_2_s1e_2, block_triangular_velocity_relative_tolerance: 1e-2, block_triangular_schur_relative_tolerance: 1e-2}
-        - {name: v1e_2_s3e_3, block_triangular_velocity_relative_tolerance: 1e-2, block_triangular_schur_relative_tolerance: 3e-3}
-        - {name: v1e_2_s1e_3, block_triangular_velocity_relative_tolerance: 1e-2, block_triangular_schur_relative_tolerance: 1e-3}
-        - {name: v3e_3_s1e_3, block_triangular_velocity_relative_tolerance: 3e-3, block_triangular_schur_relative_tolerance: 1e-3}
+      config_profile:
+        - {name: mi5, block_triangular_velocity_max_iterations: 5, block_triangular_schur_max_iterations: 5}
+        - {name: mi10, block_triangular_velocity_max_iterations: 10, block_triangular_schur_max_iterations: 10}
+        - {name: mi15, block_triangular_velocity_max_iterations: 15, block_triangular_schur_max_iterations: 15}
+        - {name: mi20, block_triangular_velocity_max_iterations: 20, block_triangular_schur_max_iterations: 20}
+        - {name: mi30, block_triangular_velocity_max_iterations: 30, block_triangular_schur_max_iterations: 30}
+        - {name: mi50, block_triangular_velocity_max_iterations: 50, block_triangular_schur_max_iterations: 50}
 
-  T_PCD:
-    description: Tuning rapido tolleranze interne PCD.
+  T_PCD_MAXITER:
+    description: Tuning PCD con cap bassi sulle iterazioni interne.
     config:
       final_time: 1.0
       statistics_start_time: 0.5
@@ -477,22 +498,20 @@ benchmarks:
       nonlinear_method: oseen
       nonlinear_iterations: 1
       preconditioner: pcd
-      pcd_velocity_max_iterations: 80
-      pcd_pressure_max_iterations: 160
+      pcd_velocity_relative_tolerance: 5e-1
+      pcd_pressure_relative_tolerance: 5e-1
       write_solution_output: false
     sweep:
-      tolerance_profile:
-        - {name: v3e_2_p1e_1, pcd_velocity_relative_tolerance: 3e-2, pcd_pressure_relative_tolerance: 1e-1}
-        - {name: v1e_2_p1e_1, pcd_velocity_relative_tolerance: 1e-2, pcd_pressure_relative_tolerance: 1e-1}
-        - {name: v1e_2_p3e_2, pcd_velocity_relative_tolerance: 1e-2, pcd_pressure_relative_tolerance: 3e-2}
-        - {name: v1e_2_p1e_2, pcd_velocity_relative_tolerance: 1e-2, pcd_pressure_relative_tolerance: 1e-2}
-        - {name: v1e_2_p3e_3, pcd_velocity_relative_tolerance: 1e-2, pcd_pressure_relative_tolerance: 3e-3}
-        - {name: v1e_2_p1e_3, pcd_velocity_relative_tolerance: 1e-2, pcd_pressure_relative_tolerance: 1e-3}
-        - {name: v3e_3_p1e_3, pcd_velocity_relative_tolerance: 3e-3, pcd_pressure_relative_tolerance: 1e-3}
-        - {name: v1e_2_p1e_4, pcd_velocity_relative_tolerance: 1e-2, pcd_pressure_relative_tolerance: 1e-4}
+      config_profile:
+        - {name: mi5, pcd_velocity_max_iterations: 5, pcd_pressure_max_iterations: 5}
+        - {name: mi10, pcd_velocity_max_iterations: 10, pcd_pressure_max_iterations: 10}
+        - {name: mi15, pcd_velocity_max_iterations: 15, pcd_pressure_max_iterations: 15}
+        - {name: mi20, pcd_velocity_max_iterations: 20, pcd_pressure_max_iterations: 20}
+        - {name: mi30, pcd_velocity_max_iterations: 30, pcd_pressure_max_iterations: 30}
+        - {name: mi50, pcd_velocity_max_iterations: 50, pcd_pressure_max_iterations: 50}
 
-  T_YOSIDA:
-    description: Tuning rapido tolleranza interna Yosida.
+  T_YOSIDA_MAXITER:
+    description: Tuning Yosida con cap bassi sulle iterazioni interne.
     config:
       final_time: 1.0
       statistics_start_time: 0.5
@@ -506,13 +525,17 @@ benchmarks:
       nonlinear_method: oseen
       nonlinear_iterations: 1
       preconditioner: yosida
-      yosida_velocity_max_iterations: 10000
-      yosida_schur_max_iterations: 10000
-      yosida_correction_max_iterations: 10000
+      yosida_relative_tolerance: 5e-1
       write_solution_output: false
     sweep:
-      yosida_relative_tolerance: [1e-1, 3e-2, 1e-2, 3e-3, 1e-3, 1e-4]
+      config_profile:
+        - {name: mi5, yosida_velocity_max_iterations: 5, yosida_schur_max_iterations: 5, yosida_correction_max_iterations: 5}
+        - {name: mi10, yosida_velocity_max_iterations: 10, yosida_schur_max_iterations: 10, yosida_correction_max_iterations: 10}
+        - {name: mi15, yosida_velocity_max_iterations: 15, yosida_schur_max_iterations: 15, yosida_correction_max_iterations: 15}
+        - {name: mi20, yosida_velocity_max_iterations: 20, yosida_schur_max_iterations: 20, yosida_correction_max_iterations: 20}
+        - {name: mi30, yosida_velocity_max_iterations: 30, yosida_schur_max_iterations: 30, yosida_correction_max_iterations: 30}
+        - {name: mi50, yosida_velocity_max_iterations: 50, yosida_schur_max_iterations: 50, yosida_correction_max_iterations: 50}
 
-  T_ALL:
-    description: Gruppo tuning rapido precondizionatori.
-    aliases: [T_SIMPLE, T_BLOCK, T_PCD, T_YOSIDA]
+  T_MAXITER:
+    description: Gruppo tuning max_iter interni.
+    aliases: [T_SIMPLE_MAXITER, T_BLOCK_MAXITER, T_PCD_MAXITER, T_YOSIDA_MAXITER]
