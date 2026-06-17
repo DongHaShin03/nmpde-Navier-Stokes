@@ -15,6 +15,7 @@ set(NAVIER_STOKES_SOURCES
 add_executable(main src/main.cpp ${NAVIER_STOKES_SOURCES})
 target_include_directories(main PRIVATE
   ${CMAKE_CURRENT_SOURCE_DIR}/include
+  ${CMAKE_CURRENT_SOURCE_DIR}/src
 )
 deal_ii_setup_target(main)
 

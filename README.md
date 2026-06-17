@@ -32,6 +32,7 @@ artifacts and are ignored by git.
 |   |-- flow_past_cylinder_2d.geo
 |   `-- flow_past_cylinder_3d.geo
 `-- src/
+    |-- benchmarks/
     |-- FlowPastCylinder2D.cpp
     |-- FlowPastCylinder3D.cpp
     |-- NavierStokes.cpp

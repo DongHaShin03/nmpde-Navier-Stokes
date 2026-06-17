@@ -1,7 +1,7 @@
 #ifndef BENCHMARKCONFIG_HPP
 #define BENCHMARKCONFIG_HPP
 
-#include "../NavierStokesOptions.hpp"
+#include "NavierStokesOptions.hpp"
 
 #include <iomanip>
 #include <limits>
