@@ -251,7 +251,6 @@ void NavierStokes<dim>::setup()
         pcout << "  Initializing the sparsity pattern" << std::endl;
 
         // In this case is a 3x3 matrix, which indicates which components can be coupled in the matrix (like a mask)
-        // Should be p-p = 0
         Table<2, DoFTools::Coupling> coupling(dim + 1, dim + 1);
         for (unsigned int c = 0; c < dim + 1; ++c)
         {
@@ -273,7 +272,6 @@ void NavierStokes<dim>::setup()
         DoFTools::make_sparsity_pattern(dof_handler, coupling, sparsity);
         sparsity.compress();
 
-        //PRESSURE MASS MATRIX COUPLING
         Table<2, DoFTools::Coupling> coupling_pm(dim + 1, dim + 1);
         for (unsigned int c = 0; c < dim + 1; ++c)
         {
@@ -313,13 +311,12 @@ void NavierStokes<dim>::setup()
         solution_owned.reinit(block_owned_dofs, MPI_COMM_WORLD);
         solution.reinit(block_owned_dofs, block_relevant_dofs, MPI_COMM_WORLD);
         old_solution.reinit(block_owned_dofs, block_relevant_dofs, MPI_COMM_WORLD);
-        //linearization_point.reinit(block_owned_dofs, block_relevant_dofs, MPI_COMM_WORLD);
     }
 }
 
 // Assemble the time-independent part of the monolithic matrix:
 // [ (1/dt)M_u + theta*nu*A_u + gamma*G   -B^T ]
-// [ B                                           0 ]
+// [           B                            0  ]
 // and, only when requested, the auxiliary pressure/velocity operators used by
 // the preconditioners.
 template <int dim>
@@ -690,7 +687,7 @@ void NavierStokes<dim>::assemble_timestep(
 
     // Mask for dirichlet
     ComponentMask mask_velocity(dim + 1, true);
-    mask_velocity.set(dim, false); //exclude pressure component
+    mask_velocity.set(dim, false); 
 
     VectorTools::interpolate_boundary_values(dof_handler, dirichlet,boundary_values, mask_velocity);
 
@@ -703,7 +700,6 @@ void NavierStokes<dim>::solve(TimerOutput &timer)
 {
     pcout << "===============================================" << std::endl;
 
-    // Check if GMRES or FGMRES
     const double rhs_norm = system_rhs.l2_norm();
     const double linear_tolerance = std::max(linear_absolute_tolerance, linear_relative_tolerance * rhs_norm);
     SolverControl solver_control(linear_max_iterations, linear_tolerance);
